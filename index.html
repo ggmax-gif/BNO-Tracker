@@ -98,9 +98,9 @@
       <button id="langZh" onclick="setLang('zh')">中文</button>
       <button id="langEn" onclick="setLang('en')">English</button>
     </div>
-    <button class="btn" id="btnExportJson" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportData()"></button>
-    <button class="btn" id="btnImportJson" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="importData()"></button>
-    <button class="btn" id="btnExportCsv" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportCSV()"></button>
+    <button class="btn" id="btnExportJson" onclick="exportData()"></button>
+    <button class="btn" id="btnImportJson" onclick="importData()"></button>
+    <button class="btn" id="btnExportCsv" onclick="exportCSV()"></button>
   </div>
 </div>
 
@@ -325,25 +325,45 @@ function saveData(data) {
 let data = loadData();
 
 // ============ DATE UTILITIES ============
+// IMPORTANT: <input type="date"> values are YYYY-MM-DD strings. `new Date("YYYY-MM-DD")`
+// parses them as UTC midnight — that flips to the previous day in any UTC-negative
+// timezone, breaking display and arithmetic. parseDate + toDateStr keep everything
+// in the user's LOCAL calendar.
+function parseDate(d) {
+  if (d instanceof Date) return new Date(d.getTime());
+  if (typeof d === 'string') {
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  }
+  return new Date(d);
+}
+
+function toDateStr(d) {
+  const dt = d instanceof Date ? d : parseDate(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function daysBetween(d1, d2) {
-  const a = new Date(d1); a.setHours(0,0,0,0);
-  const b = new Date(d2); b.setHours(0,0,0,0);
+  const a = parseDate(d1); a.setHours(0,0,0,0);
+  const b = parseDate(d2); b.setHours(0,0,0,0);
   return Math.round((b - a) / 86400000);
 }
 
 function addDays(d, n) {
-  const r = new Date(d); r.setDate(r.getDate() + n); return r;
+  const r = parseDate(d); r.setDate(r.getDate() + n); return r;
 }
 
 function fmt(d) {
   if (!d) return '';
-  const dt = new Date(d);
+  const dt = parseDate(d);
   return dt.toLocaleDateString(t('locale'), { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function todayStr() {
-  const t = new Date();
-  return t.toISOString().split('T')[0];
+  return toDateStr(new Date());
 }
 
 // ============ BNO ILR CALCULATION ENGINE ============
@@ -351,7 +371,7 @@ function calcRollingWindow(member, trips) {
   const today = new Date();
   today.setHours(0,0,0,0);
   const memberTrips = trips.filter(tr => tr.memberId === member.id)
-    .sort((a,b) => new Date(a.departureDate) - new Date(b.departureDate));
+    .sort((a,b) => parseDate(a.departureDate) - parseDate(b.departureDate));
 
   const windowStart = addDays(today, -179);
 
@@ -359,16 +379,16 @@ function calcRollingWindow(member, trips) {
   let absentPeriods = [];
 
   memberTrips.forEach(trip => {
-    const tripEnd = new Date(trip.returnDate || todayStr());
+    const tripEnd = parseDate(trip.returnDate || todayStr());
     tripEnd.setHours(0,0,0,0);
-    const tripStart = new Date(trip.departureDate);
+    const tripStart = parseDate(trip.departureDate);
     tripStart.setHours(0,0,0,0);
 
     const overlapStart = new Date(Math.max(tripStart.getTime(), windowStart.getTime()));
     const overlapEnd = new Date(Math.min(tripEnd.getTime(), today.getTime()));
 
     if (overlapStart <= overlapEnd) {
-      const days = daysBetween(overlapStart.toISOString().split('T')[0], overlapEnd.toISOString().split('T')[0]) + 1;
+      const days = daysBetween(toDateStr(overlapStart), toDateStr(overlapEnd)) + 1;
       daysAbsentInWindow += days;
       absentPeriods.push({
         from: trip.departureDate,
@@ -382,20 +402,20 @@ function calcRollingWindow(member, trips) {
   const remaining = Math.max(0, 180 - daysAbsentInWindow);
   const status = daysAbsentInWindow >= 180 ? 'red' : daysAbsentInWindow >= 120 ? 'amber' : 'green';
 
-  const grantDate = new Date(member.bnoGrantDate);
+  const grantDate = parseDate(member.bnoGrantDate);
   grantDate.setHours(0,0,0,0);
   let totalAbsent = 0;
   const presentTrips = [];
 
   memberTrips.forEach(trip => {
-    const tripEnd = trip.returnDate ? new Date(trip.returnDate) : today;
+    const tripEnd = trip.returnDate ? parseDate(trip.returnDate) : new Date(today.getTime());
     tripEnd.setHours(0,0,0,0);
-    const tripStart = new Date(trip.departureDate);
+    const tripStart = parseDate(trip.departureDate);
     tripStart.setHours(0,0,0,0);
     if (tripEnd >= grantDate) {
       const days = daysBetween(
-        new Date(Math.max(tripStart.getTime(), grantDate.getTime())).toISOString().split('T')[0],
-        tripEnd.toISOString().split('T')[0]
+        toDateStr(new Date(Math.max(tripStart.getTime(), grantDate.getTime()))),
+        toDateStr(tripEnd)
       ) + 1;
       totalAbsent += days;
       presentTrips.push({
@@ -407,7 +427,7 @@ function calcRollingWindow(member, trips) {
   });
 
   const ilrEarliest = addDays(member.bnoGrantDate, 5 * 365);
-  const ilrEarliestStr = ilrEarliest.toISOString().split('T')[0];
+  const ilrEarliestStr = toDateStr(ilrEarliest);
 
   let worstWindow = 0;
   for (let i = 0; i < 10; i++) {
@@ -417,12 +437,12 @@ function calcRollingWindow(member, trips) {
 
     let windowAbsences = 0;
     memberTrips.forEach(trip => {
-      const tripEnd = trip.returnDate ? new Date(trip.returnDate) : today;
-      const tripStart = new Date(trip.departureDate);
+      const tripEnd = trip.returnDate ? parseDate(trip.returnDate) : new Date(today.getTime());
+      const tripStart = parseDate(trip.departureDate);
       const ws = new Date(Math.max(tripStart.getTime(), periodStart.getTime()));
       const we = new Date(Math.min(tripEnd.getTime(), periodEnd.getTime()));
       if (ws <= we) {
-        windowAbsences += daysBetween(ws.toISOString().split('T')[0], we.toISOString().split('T')[0]) + 1;
+        windowAbsences += daysBetween(toDateStr(ws), toDateStr(we)) + 1;
       }
     });
     worstWindow = Math.max(worstWindow, windowAbsences);
@@ -594,7 +614,7 @@ function renderMembers() {
 }
 
 function renderTrips() {
-  const sortedTrips = [...data.trips].sort((a,b) => new Date(b.departureDate) - new Date(a.departureDate));
+  const sortedTrips = [...data.trips].sort((a,b) => parseDate(b.departureDate) - parseDate(a.departureDate));
 
   let rows = sortedTrips.map(tr => `
     <tr>
@@ -890,7 +910,7 @@ function calcScenarios() {
   const durations = [7, 14, 30, 60, 90, 120, 150, 180];
 
   let rows = durations.map(d => {
-    const returnDate = addDays(departure, d - 1).toISOString().split('T')[0];
+    const returnDate = toDateStr(addDays(departure, d - 1));
     const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
     const calc = calcRollingWindow(member, proposedTrips);
     const safe = calc.status === 'green' ? '✓' : calc.status === 'amber' ? '⚠' : '✗';
