@@ -25,10 +25,11 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-  .header { background: var(--accent); color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header { background: var(--accent); color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .header > div:first-child { min-width: 0; flex: 1 1 280px; }
   .header h1 { font-size: 20px; font-weight: 700; }
   .header .subtitle { font-size: 12px; opacity: .85; }
-  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .lang-toggle { display: inline-flex; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; overflow: hidden; }
   .lang-toggle button { background: transparent; color: #fff; border: none; padding: 6px 12px; font-size: 12px; cursor: pointer; font-weight: 500; }
   .lang-toggle button.active { background: #fff; color: var(--accent); }
@@ -367,25 +368,36 @@ function todayStr() {
 }
 
 // ============ BNO ILR CALCULATION ENGINE ============
-function calcRollingWindow(member, trips) {
+// `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling 180-day
+// window. Defaults to today. The What-If Planner / Quick Trip Scenarios pass the
+// proposed trip's RETURN date so future trips are evaluated at trip end — this
+// is the only point at which a long future trip's absence days are fully inside
+// the rolling window. ILR eligibility (isEligible / daysToILR) always uses today.
+function calcRollingWindow(member, trips, referenceDate) {
   const today = new Date();
   today.setHours(0,0,0,0);
+  const refDate = referenceDate ? parseDate(referenceDate) : new Date(today.getTime());
+  refDate.setHours(0,0,0,0);
+  // Use the LATER of today and refDate so the planner never reports a rolling
+  // window that's better than the current state when the proposed trip is short.
+  const evalDate = refDate > today ? refDate : today;
+
   const memberTrips = trips.filter(tr => tr.memberId === member.id)
     .sort((a,b) => parseDate(a.departureDate) - parseDate(b.departureDate));
 
-  const windowStart = addDays(today, -179);
+  const windowStart = addDays(evalDate, -179);
 
   let daysAbsentInWindow = 0;
   let absentPeriods = [];
 
   memberTrips.forEach(trip => {
-    const tripEnd = parseDate(trip.returnDate || todayStr());
+    const tripEnd = parseDate(trip.returnDate || toDateStr(evalDate));
     tripEnd.setHours(0,0,0,0);
     const tripStart = parseDate(trip.departureDate);
     tripStart.setHours(0,0,0,0);
 
     const overlapStart = new Date(Math.max(tripStart.getTime(), windowStart.getTime()));
-    const overlapEnd = new Date(Math.min(tripEnd.getTime(), today.getTime()));
+    const overlapEnd = new Date(Math.min(tripEnd.getTime(), evalDate.getTime()));
 
     if (overlapStart <= overlapEnd) {
       const days = daysBetween(toDateStr(overlapStart), toDateStr(overlapEnd)) + 1;
@@ -621,7 +633,7 @@ function renderTrips() {
       <td><strong>${esc(getMemberName(tr.memberId))}</strong></td>
       <td>${fmt(tr.departureDate)}</td>
       <td>${tr.returnDate ? fmt(tr.returnDate) : `<span class="badge badge-amber">${t('stillAway')}</span>`}</td>
-      <td>${t('daysSuffix')(tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr()))}</td>
+      <td>${t('daysSuffix')((tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr())) + 1)}</td>
       <td>${esc(tr.purpose || '-')}</td>
       <td>
         <button class="btn btn-sm btn-danger" onclick="deleteTrip('${tr.id}')">${t('btnDelete')}</button>
@@ -862,7 +874,11 @@ function calcPlanner() {
   if (!member) return;
 
   const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-  const calc = calcRollingWindow(member, proposedTrips);
+  // Evaluate the rolling 180-day window at the END of the proposed trip — that's
+  // when its absence days are fully inside the window. Without this, a 200-day
+  // future trip would falsely report "OK to travel" because today's window only
+  // overlaps with 1 day of it.
+  const calc = calcRollingWindow(member, proposedTrips, returnDate);
   const currentCalc = calcRollingWindow(member, data.trips);
   const tripDays = daysBetween(departure, returnDate) + 1;
 
@@ -912,7 +928,8 @@ function calcScenarios() {
   let rows = durations.map(d => {
     const returnDate = toDateStr(addDays(departure, d - 1));
     const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-    const calc = calcRollingWindow(member, proposedTrips);
+    // Evaluate at trip end so a 180-day scenario actually shows the breach.
+    const calc = calcRollingWindow(member, proposedTrips, returnDate);
     const safe = calc.status === 'green' ? '✓' : calc.status === 'amber' ? '⚠' : '✗';
     return `<tr>
       <td>${t('durationCell')(d)}</td>
@@ -965,7 +982,8 @@ function exportCSV() {
   let csv = t('csvHeader') + '\n';
   data.trips.forEach(tr => {
     const name = getMemberName(tr.memberId);
-    const dur = tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr());
+    // +1 → inclusive day count, matches the dashboard / BNO 180-day rule
+    const dur = (tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr())) + 1;
     csv += `"${name}","${tr.departureDate}","${tr.returnDate || ''}",${dur},"${tr.purpose || ''}"\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv' });
