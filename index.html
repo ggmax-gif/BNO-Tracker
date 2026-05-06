@@ -141,6 +141,10 @@ const I18N = {
     approxDays: (n) => `大概 ${n} 日`,
     daysShort: (n) => `${n} 日`,
     tipMembers: '提示: 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面嘅每 6 個月周期。',
+    midnightRuleTitle: '午夜規則 (Midnight Rule)',
+    midnightRuleBody: '一日只計為「離港日」，係指你喺英國時間午夜時身處英國境外。 出發日 計入離港日（午夜時人喺外面），返港日 不計（午夜前已返到英國）。所以 12月7日去、2月4日返 → 59 日離港，唔係 60 日。',
+    crownDepTitle: '⚠️ 隱藏陷阱：皇家屬地 + 愛爾蘭',
+    crownDepBody: '去 澤西、根西、馬恩島（皇家屬地）或 愛爾蘭共和國 雖然屬於共同旅行區（CTA），但係內政部會 當作離開英國 計算。記得照常喺出行記錄度填返。',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
@@ -209,6 +213,10 @@ const I18N = {
     approxDays: (n) => `~${n} days`,
     daysShort: (n) => `${n} days`,
     tipMembers: 'Tip: Set each person’s BNO grant date to calculate ILR eligibility. The tracker checks every 6-month period within the 5-year qualifying timeframe.',
+    midnightRuleTitle: 'The midnight rule',
+    midnightRuleBody: 'A day only counts as "absent" if you are outside the UK at midnight (UK time). The day of departure DOES count (you are abroad at midnight); the day of return does NOT (you are back in the UK by midnight). So a 7 Dec departure and 4 Feb return = 59 absent days, not 60.',
+    crownDepTitle: '⚠️ Hidden trap: Crown Dependencies + Ireland',
+    crownDepBody: 'Trips to Jersey, Guernsey, the Isle of Man (Crown Dependencies) or the Republic of Ireland DO count as absences from the UK for ILR — even though they are part of the Common Travel Area. Record them as trips just like anywhere else.',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
@@ -353,7 +361,35 @@ function todayStr() {
   return toDateStr(new Date());
 }
 
+function _todayMidnight() {
+  const d = new Date(); d.setHours(0,0,0,0); return d;
+}
+
 // ============ BNO ILR CALCULATION ENGINE ============
+// MIDNIGHT RULE: a day counts as absent only if the person is outside the UK at
+// the END of that day (UK midnight). So the day of departure counts as absent
+// (still abroad at midnight) but the day of return does NOT (back in UK at
+// midnight). The "absence interval" for a completed trip is therefore
+// [departureDate, returnDate - 1] inclusive. For an ongoing trip with no
+// return date set yet, it's [departureDate, evalDate] (the user is presumed
+// still abroad at the next midnight).
+function tripAbsenceRange(trip, evalDate) {
+  const start = parseDate(trip.departureDate); start.setHours(0,0,0,0);
+  let end;
+  if (trip.returnDate) {
+    end = addDays(trip.returnDate, -1); end.setHours(0,0,0,0);
+  } else {
+    end = new Date(evalDate.getTime()); end.setHours(0,0,0,0);
+  }
+  return { start, end, valid: start <= end };
+}
+
+function tripAbsenceDays(trip, evalDate) {
+  const r = tripAbsenceRange(trip, evalDate);
+  if (!r.valid) return 0;
+  return daysBetween(toDateStr(r.start), toDateStr(r.end)) + 1;
+}
+
 // `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling 180-day
 // window. Defaults to today. The What-If Planner passes the proposed trip's
 // RETURN date so future trips are evaluated at trip end — this is the only
@@ -377,14 +413,10 @@ function calcRollingWindow(member, trips, referenceDate) {
   let absentPeriods = [];
 
   memberTrips.forEach(trip => {
-    const tripEnd = parseDate(trip.returnDate || toDateStr(evalDate));
-    tripEnd.setHours(0,0,0,0);
-    const tripStart = parseDate(trip.departureDate);
-    tripStart.setHours(0,0,0,0);
-
-    const overlapStart = new Date(Math.max(tripStart.getTime(), windowStart.getTime()));
-    const overlapEnd = new Date(Math.min(tripEnd.getTime(), evalDate.getTime()));
-
+    const r = tripAbsenceRange(trip, evalDate);
+    if (!r.valid) return;
+    const overlapStart = new Date(Math.max(r.start.getTime(), windowStart.getTime()));
+    const overlapEnd = new Date(Math.min(r.end.getTime(), evalDate.getTime()));
     if (overlapStart <= overlapEnd) {
       const days = daysBetween(toDateStr(overlapStart), toDateStr(overlapEnd)) + 1;
       daysAbsentInWindow += days;
@@ -406,15 +438,11 @@ function calcRollingWindow(member, trips, referenceDate) {
   const presentTrips = [];
 
   memberTrips.forEach(trip => {
-    const tripEnd = trip.returnDate ? parseDate(trip.returnDate) : new Date(today.getTime());
-    tripEnd.setHours(0,0,0,0);
-    const tripStart = parseDate(trip.departureDate);
-    tripStart.setHours(0,0,0,0);
-    if (tripEnd >= grantDate) {
-      const days = daysBetween(
-        toDateStr(new Date(Math.max(tripStart.getTime(), grantDate.getTime()))),
-        toDateStr(tripEnd)
-      ) + 1;
+    const r = tripAbsenceRange(trip, today);
+    if (!r.valid) return;
+    if (r.end >= grantDate) {
+      const effStart = new Date(Math.max(r.start.getTime(), grantDate.getTime()));
+      const days = daysBetween(toDateStr(effStart), toDateStr(r.end)) + 1;
       totalAbsent += days;
       presentTrips.push({
         from: trip.departureDate,
@@ -435,10 +463,10 @@ function calcRollingWindow(member, trips, referenceDate) {
 
     let windowAbsences = 0;
     memberTrips.forEach(trip => {
-      const tripEnd = trip.returnDate ? parseDate(trip.returnDate) : new Date(today.getTime());
-      const tripStart = parseDate(trip.departureDate);
-      const ws = new Date(Math.max(tripStart.getTime(), periodStart.getTime()));
-      const we = new Date(Math.min(tripEnd.getTime(), periodEnd.getTime()));
+      const r = tripAbsenceRange(trip, today);
+      if (!r.valid) return;
+      const ws = new Date(Math.max(r.start.getTime(), periodStart.getTime()));
+      const we = new Date(Math.min(r.end.getTime(), periodEnd.getTime()));
       if (ws <= we) {
         windowAbsences += daysBetween(toDateStr(ws), toDateStr(we)) + 1;
       }
@@ -619,7 +647,7 @@ function renderTrips() {
       <td><strong>${esc(getMemberName(tr.memberId))}</strong></td>
       <td>${fmt(tr.departureDate)}</td>
       <td>${tr.returnDate ? fmt(tr.returnDate) : `<span class="badge badge-amber">${t('stillAway')}</span>`}</td>
-      <td>${t('daysSuffix')((tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr())) + 1)}</td>
+      <td>${t('daysSuffix')(tripAbsenceDays(tr, _todayMidnight()))}</td>
       <td>${esc(tr.purpose || '-')}</td>
       <td>
         <button class="btn btn-sm btn-danger" onclick="deleteTrip('${tr.id}')">${t('btnDelete')}</button>
@@ -629,6 +657,8 @@ function renderTrips() {
   if (sortedTrips.length === 0) rows = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text2)">${t('noTrips')}</td></tr>`;
 
   return `
+    <div class="info-box"><strong>${t('midnightRuleTitle')}</strong><br>${t('midnightRuleBody')}</div>
+    <div class="warning-box"><strong>${t('crownDepTitle')}</strong><br>${t('crownDepBody')}</div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h2 style="margin:0">${t('titleTrips')}</h2>
@@ -848,7 +878,8 @@ function calcPlanner() {
   // overlaps with 1 day of it.
   const calc = calcRollingWindow(member, proposedTrips, returnDate);
   const currentCalc = calcRollingWindow(member, data.trips);
-  const tripDays = daysBetween(departure, returnDate) + 1;
+  // Midnight rule: depart day counts, return day doesn't → daysBetween (no +1)
+  const tripDays = daysBetween(departure, returnDate);
 
   const headline = calc.status === 'green' ? t('canTravel') : calc.status === 'amber' ? t('watchOut') : t('cantTravel');
 
@@ -916,8 +947,8 @@ function exportCSV() {
   let csv = t('csvHeader') + '\n';
   data.trips.forEach(tr => {
     const name = getMemberName(tr.memberId);
-    // +1 → inclusive day count, matches the dashboard / BNO 180-day rule
-    const dur = (tr.returnDate ? daysBetween(tr.departureDate, tr.returnDate) : daysBetween(tr.departureDate, todayStr())) + 1;
+    // Midnight rule absence days (depart inclusive, return exclusive)
+    const dur = tripAbsenceDays(tr, _todayMidnight());
     csv += `"${name}","${tr.departureDate}","${tr.returnDate || ''}",${dur},"${tr.purpose || ''}"\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv' });
