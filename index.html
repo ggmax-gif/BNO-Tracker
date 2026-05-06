@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BNO 身份狀態追蹤器</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e2e5ea;
+    --text: #1a1d23;
+    --text2: #5f6572;
+    --accent: #1a56db;
+    --accent2: #e8eefb;
+    --green: #0d8c44;
+    --green-bg: #d4f5e0;
+    --amber: #b45309;
+    --amber-bg: #fef3c7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .header { background: var(--accent); color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header .subtitle { font-size: 12px; opacity: .85; }
+  .header-actions { display: flex; gap: 8px; }
+  .tabs { display: flex; background: var(--card); border-bottom: 1px solid var(--border); padding: 0 16px; }
+  .tab { padding: 10px 18px; font-size: 14px; cursor: pointer; border: none; background: none; color: var(--text2); border-bottom: 2px solid transparent; transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+  .card h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  .badge-blue { background: var(--accent2); color: var(--accent); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: var(--accent2); }
+  .btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text); transition: all .15s; }
+  .btn:hover { background: var(--bg); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #1548b8; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { background: var(--red-bg); }
+  .form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+  .form-group { display: flex; flex-direction: column; gap: 3px; }
+  .form-group label { font-size: 12px; color: var(--text2); font-weight: 500; }
+  input, select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--card); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent2); }
+  .stat { text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; }
+  .progress-bar { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .progress-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  .member-header { display: flex; justify-content: space-between; align-items: center; }
+  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--card); border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+  .modal h2 { margin-bottom: 16px; }
+  .modal .form-row { margin-bottom: 12px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text2); }
+  .empty-state p { margin: 8px 0; }
+  .chart-container { position: relative; height: 250px; }
+  .info-box { background: var(--accent2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--accent); margin-bottom: 16px; }
+  .warning-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--amber); margin-bottom: 16px; }
+  .danger-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); margin-bottom: 16px; }
+
+  @media print { .tabs, .header-actions, .btn, .tab { display: none !important; } .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; } }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .container { padding: 10px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>英國 BNO 身份狀態追蹤器</h1>
+    <div class="subtitle">追蹤你一家人喺 BNO 簽證規定下面嘅英國免簽到港日數</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportData()">匯出 JSON</button>
+    <button class="btn" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="importData()">匯入 JSON</button>
+    <button class="btn" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="exportCSV()">匯出 CSV</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('dashboard')">儀表板</button>
+  <button class="tab" onclick="showTab('members')">家庭成員</button>
+  <button class="tab" onclick="showTab('trips')">出行記錄</button>
+  <button class="tab" onclick="showTab('planner')">假設情況規劃器</button>
+</div>
+
+<div class="container" id="app"></div>
+
+<input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
+
+<script>
+// ============ DATA LAYER ============
+const STORAGE_KEY = 'bno-tracker-data';
+
+function getDefaultData() {
+  return { familyName: "我哋一家人", members: [], trips: [] };
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : getDefaultData();
+  } catch { return getDefaultData(); }
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+let data = loadData();
+
+// ============ DATE UTILITIES ============
+function daysBetween(d1, d2) {
+  const a = new Date(d1); a.setHours(0,0,0,0);
+  const b = new Date(d2); b.setHours(0,0,0,0);
+  return Math.round((b - a) / 86400000);
+}
+
+function addDays(d, n) {
+  const r = new Date(d); r.setDate(r.getDate() + n); return r;
+}
+
+function fmt(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('zh-HK', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function fmtShort(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('zh-HK', { day: '2-digit', month: 'short' });
+}
+
+function todayStr() {
+  const t = new Date();
+  return t.toISOString().split('T')[0];
+}
+
+// ============ BNO ILR CALCULATION ENGINE ============
+// The 180-day rule: you cannot be absent from the UK for more than 180 days
+// in any rolling 180-day period for ILR purposes.
+// For BNO visa: same 180-day rule applies per any rolling 180-day window.
+
+function calcRollingWindow(member, trips) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const memberTrips = trips.filter(t => t.memberId === member.id)
+    .sort((a,b) => new Date(a.departureDate) - new Date(b.departureDate));
+
+  // Calculate days absent in the last 180 days (looking back from today)
+  const windowStart = addDays(today, -179); // 180-day window ending today
+
+  let daysAbsentInWindow = 0;
+  let absentPeriods = [];
+
+  memberTrips.forEach(trip => {
+    const tripEnd = new Date(trip.returnDate || todayStr());
+    tripEnd.setHours(0,0,0,0);
+    const tripStart = new Date(trip.departureDate);
+    tripStart.setHours(0,0,0,0);
+
+    // Overlap with the 180-day window
+    const overlapStart = new Date(Math.max(tripStart.getTime(), windowStart.getTime()));
+    const overlapEnd = new Date(Math.min(tripEnd.getTime(), today.getTime()));
+
+    if (overlapStart <= overlapEnd) {
+      const days = daysBetween(overlapStart.toISOString().split('T')[0], overlapEnd.toISOString().split('T')[0]) + 1;
+      daysAbsentInWindow += days;
+      absentPeriods.push({
+        from: trip.departureDate,
+        to: trip.returnDate || '仍未返港',
+        days: days,
+        overlap: days
+      });
+    }
+  });
+
+  const remaining = Math.max(0, 180 - daysAbsentInWindow);
+  const status = daysAbsentInWindow >= 180 ? 'red' : daysAbsentInWindow >= 120 ? 'amber' : 'green';
+
+  // Calculate total days absent since BNO grant
+  const grantDate = new Date(member.bnoGrantDate);
+  grantDate.setHours(0,0,0,0);
+  let totalAbsent = 0;
+  const presentTrips = [];
+
+  memberTrips.forEach(trip => {
+    const tripEnd = trip.returnDate ? new Date(trip.returnDate) : today;
+    tripEnd.setHours(0,0,0,0);
+    const tripStart = new Date(trip.departureDate);
+    tripStart.setHours(0,0,0,0);
+    if (tripEnd >= grantDate) {
+      const days = daysBetween(
+        new Date(Math.max(tripStart.getTime(), grantDate.getTime())).toISOString().split('T')[0],
+        tripEnd.toISOString().split('T')[0]
+      ) + 1;
+      totalAbsent += days;
+      presentTrips.push({
+        from: trip.departureDate,
+        to: trip.returnDate || '仍未返港',
+        days: days
+      });
+    }
+  });
+
+  // ILR eligibility: typically 5 years after BNO grant, but must satisfy 180-day rule
+  // in every qualifying period during those 5 years
+  const ilrEarliest = addDays(member.bnoGrantDate, 5 * 365);
+  const ilrEarliestStr = ilrEarliest.toISOString().split('T')[0];
+
+  // For the 5-year ILR route, check 180-day compliance in each 6-month period
+  // Simplified: check the worst rolling 180-day window in the qualifying period
+  let worstWindow = 0;
+  // For each 6-month period after grant, calculate max absences
+  for (let i = 0; i < 10; i++) { // Check up to 10 half-year periods
+    const periodStart = addDays(member.bnoGrantDate, i * 182);
+    const periodEnd = addDays(periodStart, 179);
+    if (periodStart > today) break;
+
+    let windowAbsences = 0;
+    memberTrips.forEach(trip => {
+      const tripEnd = trip.returnDate ? new Date(trip.returnDate) : today;
+      const tripStart = new Date(trip.departureDate);
+      const ws = new Date(Math.max(tripStart.getTime(), periodStart.getTime()));
+      const we = new Date(Math.min(tripEnd.getTime(), periodEnd.getTime()));
+      if (ws <= we) {
+        windowAbsences += daysBetween(ws.toISOString().split('T')[0], we.toISOString().split('T')[0]) + 1;
+      }
+    });
+    worstWindow = Math.max(worstWindow, windowAbsences);
+  }
+
+  const isCompliant = worstWindow < 180;
+  const isEligible = ilrEarliest <= today && isCompliant;
+  const isGettingClose = ilrEarliest <= addDays(today, 90) && isCompliant;
+
+  // Days until ILR earliest date
+  const daysToILR = Math.max(0, daysBetween(todayStr(), ilrEarliestStr));
+
+  return {
+    daysAbsentInWindow,
+    remaining,
+    status,
+    totalAbsent,
+    absentPeriods,
+    presentTrips,
+    isCompliant,
+    isEligible,
+    isGettingClose,
+    daysToILR,
+    ilrEarliest,
+    ilrEarliestStr,
+    worstWindow
+  };
+}
+
+// ============ TAB NAVIGATION ============
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  render(name);
+}
+
+// ============ RENDER ENGINE ============
+function render(tab) {
+  const app = document.getElementById('app');
+  switch(tab) {
+    case 'dashboard': app.innerHTML = renderDashboard(); break;
+    case 'members': app.innerHTML = renderMembers(); break;
+    case 'trips': app.innerHTML = renderTrips(); break;
+    case 'planner': app.innerHTML = renderPlanner(); break;
+  }
+}
+
+function renderDashboard() {
+  const totalMembers = data.members.length;
+  if (totalMembers === 0) {
+    return `<div class="empty-state"><h2>歡迎使用 BNO 身份狀態追蹤器</h2><p>加入家庭成員開始使用。</p><button class="btn btn-primary" onclick="showTab('members'); setTimeout(()=>document.querySelector('.tab:nth-child(2)').click(), 10)">加入第一個成員</button></div>`;
+  }
+
+  const results = data.members.map(m => ({ member: m, calc: calcRollingWindow(m, data.trips) }));
+
+  const compliant = results.filter(r => r.calc.status === 'green').length;
+  const warnings = results.filter(r => r.calc.status === 'amber').length;
+  const violations = results.filter(r => r.calc.status === 'red').length;
+
+  let memberCards = results.map(r => {
+    const { member: m, calc } = r;
+    const pct = Math.min(100, Math.round((calc.daysAbsentInWindow / 180) * 100));
+    const barColor = calc.status === 'green' ? 'var(--green)' : calc.status === 'amber' ? 'var(--amber)' : 'var(--red)';
+    const barBg = calc.status === 'green' ? 'var(--green-bg)' : calc.status === 'amber' ? 'var(--amber-bg)' : 'var(--red-bg)';
+    const statusLabel = calc.status === 'green' ? '喺限制以內' : calc.status === 'amber' ? '接近限制' : '超出限制';
+
+    let ilrInfo = '';
+    if (calc.isEligible) {
+      ilrInfo = `<span class="badge badge-green">符合 ILR 資格</span>`;
+    } else if (calc.isGettingClose) {
+      ilrInfo = `<span class="badge badge-amber">ILR 大概 ${calc.daysToILR} 日後</span>`;
+    } else {
+      ilrInfo = `<span class="badge badge-blue">ILR 喺 ${calc.daysToILR} 日後</span>`;
+    }
+
+    return `
+      <div class="card">
+        <div class="member-header">
+          <h3 style="margin:0">${esc(m.name)}</h3>
+          <span class="badge badge-${calc.status}">${statusLabel}</span>
+        </div>
+        <div style="margin-top:12px">
+          <div class="grid3">
+            <div class="stat">
+              <div class="stat-value" style="color:var(--${calc.status === 'green' ? 'green' : calc.status === 'amber' ? 'amber' : 'red'})">${calc.daysAbsentInWindow}</div>
+              <div class="stat-label">窗口期日數</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">${calc.remaining}</div>
+              <div class="stat-label">餘下日數</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">${calc.totalAbsent}</div>
+              <div class="stat-label">總計離港日數</div>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%;background:${barColor}"></div>
+          </div>
+          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">BNO 批准日期: ${fmt(m.bnoGrantDate)}</span>
+            ${ilrInfo}
+          </div>
+          ${calc.worstWindow >= 150 ? `<div class="warning-box" style="margin-top:8px">最嚴重嘅180日周期: ${calc.worstWindow} 日離港</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="grid3">
+      <div class="card stat">
+        <div class="stat-value">${totalMembers}</div>
+        <div class="stat-label">家庭成員</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-value" style="color:var(--green)">${compliant}</div>
+        <div class="stat-label">喺限制以內</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-value" style="color:${warnings > 0 ? 'var(--amber)' : 'var(--green)'}">${warnings}</div>
+        <div class="stat-label">接近限制</div>
+      </div>
+      ${violations > 0 ? `
+      <div class="card stat">
+        <div class="stat-value" style="color:var(--red)">${violations}</div>
+        <div class="stat-label">超出限制</div>
+      </div>` : ''}
+    </div>
+    <div class="grid">${memberCards}</div>
+    <div class="card" style="margin-top:16px">
+      <h2>目前窗口期餘下日數 (按成員)</h2>
+      <div class="chart-container"><canvas id="dashboardChart"></canvas></div>
+    </div>`;
+}
+
+function renderMembers() {
+  let listHtml = data.members.map(m => {
+    const calc = calcRollingWindow(m, data.trips);
+    return `
+      <tr>
+        <td><strong>${esc(m.name)}</strong><br><span style="font-size:12px;color:var(--text2)">Granted: ${fmt(m.bnoGrantDate)}</span></td>
+        <td>${calc.daysAbsentInWindow}/180 days</td>
+        <td><span class="badge badge-${calc.status}">${calc.status === 'green' ? '正常' : calc.status === 'amber' ? '警告' : '超出'}</span></td>
+        <td>${calc.isEligible ? '<span class="badge badge-green">符合資格</span>' : calc.isGettingClose ? `大概 ${calc.daysToILR} 日` : `${calc.daysToILR} 日`}</td>
+        <td>
+          <button class="btn btn-sm" onclick="editMember('${m.id}')">編輯</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">刪除</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  if (data.members.length === 0) listHtml = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text2)">尚未加入任何家庭成員</td></tr>';
+
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0">家庭成員</h2>
+        <button class="btn btn-primary" onclick="showMemberModal()">+ 加入成員</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>姓名</th><th>窗口期日數</th><th>狀態</th><th>ILR 狀態</th><th>操作</th></tr></thead>
+          <tbody>${listHtml}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="info-box">
+      <strong>提示:</strong> 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面嘅每 6 個月周期。
+    </div>`;
+}
+
+function renderTrips() {
+  const sortedTrips = [...data.trips].sort((a,b) => new Date(b.departureDate) - new Date(a.departureDate));
+
+  let rows = sortedTrips.map(t => `
+    <tr>
+      <td><strong>${esc(getMemberName(t.memberId))}</strong></td>
+      <td>${fmt(t.departureDate)}</td>
+      <td>${t.returnDate ? fmt(t.returnDate) : '<span class="badge badge-amber">仍未返港</span>'}</td>
+      <td>${t.returnDate ? daysBetween(t.departureDate, t.returnDate) : daysBetween(t.departureDate, todayStr())} days</td>
+      <td>${esc(t.purpose || '-')}</td>
+      <td>
+        <button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')">Delete</button>
+      </td>
+    </tr>`).join('');
+
+  if (sortedTrips.length === 0) rows = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text2)">尚未記錄任何出行</td></tr>';
+
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0">出行記錄</h2>
+        <button class="btn btn-primary" onclick="showTripModal()">+ 記錄出行</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>成員</th><th>離港日期</th><th>返港日期</th><th>持續時間</th><th>目的</th><th>操作</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderPlanner() {
+  if (data.members.length === 0) {
+    return `<div class="empty-state"><h2>先加入家庭成員</h2><p>規劃器需要成員資料先可以計算可用日數。</p></div>`;
+  }
+
+  const options = data.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+
+  return `
+    <div class="card">
+      <h2>假設情況出行規劃器</h2>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px">計劃未來出行，睇吓點影響你嘅180日滾動窗口期。</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>家庭成員</label>
+          <select id="planMember">${options}</select>
+        </div>
+        <div class="form-group">
+          <label>離港日期</label>
+          <input type="date" id="planDeparture" value="${todayStr()}">
+        </div>
+        <div class="form-group">
+          <label>返港日期</label>
+          <input type="date" id="planReturn">
+        </div>
+        <div class="form-group" style="justify-content:flex-end">
+          <button class="btn btn-primary" onclick="calcPlanner()">計算</button>
+        </div>
+      </div>
+    </div>
+    <div id="planResult"></div>
+    <div class="card" style="margin-top:16px">
+      <h2>快速出行情景</h2>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px">並排比較常見出行持續時間。</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>家庭成員</label>
+          <select id="scenarioMember">${options}</select>
+        </div>
+        <div class="form-group">
+          <label>離港日期</label>
+          <input type="date" id="scenarioDate" value="${todayStr()}">
+        </div>
+        <div class="form-group" style="justify-content:flex-end">
+          <button class="btn btn-primary" onclick="calcScenarios()">顯示情景</button>
+        </div>
+      </div>
+      <div id="scenarioResult"></div>
+    </div>`;
+}
+
+// ============ MODALS ============
+function showTripModal(editId) {
+  const trip = editId ? data.trips.find(t => t.id === editId) : null;
+  const options = data.members.map(m => `<option value="${m.id}" ${trip && trip.memberId === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'tripModal';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>${trip ? '編輯出行' : '記錄新出行'}</h2>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>家庭成員</label>
+          <select id="mTripMember">${options}</select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>離港日期</label>
+          <input type="date" id="mTripDeparture" value="${trip ? trip.departureDate : todayStr()}">
+        </div>
+        <div class="form-group">
+          <label>返港日期</label>
+          <input type="date" id="mTripReturn" value="${trip && trip.returnDate ? trip.returnDate : ''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>目的 (可选)</label>
+          <input type="text" id="mTripPurpose" placeholder="例如: 探親、度假" value="${trip ? esc(trip.purpose || '') : ''}">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('tripModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveTrip('${editId || ''}')">儲存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function showMemberModal(editId) {
+  const member = editId ? data.members.find(m => m.id === editId) : null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'memberModal';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>${member ? '編輯成員' : '加入家庭成員'}</h2>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>全名</label>
+          <input type="text" id="mMemberName" placeholder="例如: 陳大文" value="${member ? esc(member.name) : ''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>BNO 簽證批准日期</label>
+          <input type="date" id="mGrantDate" value="${member ? member.bnoGrantDate : ''}" ${!member ? 'required' : ''}>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>關係</label>
+          <select id="mRelationship">
+            <option value="">揀選...</option>
+            <option value="holder" ${member && member.relationship === 'holder' ? 'selected' : ''}>BNO 持有人</option>
+            <option value="partner" ${member && member.relationship === 'partner' ? 'selected' : ''}>配偶</option>
+            <option value="child" ${member && member.relationship === 'child' ? 'selected' : ''}>子女</option>
+            <option value="dependent" ${member && member.relationship === 'dependent' ? 'selected' : ''}>受養人</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>備註 (可选)</label>
+          <input type="text" id="mNotes" placeholder="任何其他備註" value="${member ? esc(member.notes || '') : ''}">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('memberModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveMember('${editId || ''}')">儲存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// Close modals on overlay click
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) e.target.remove();
+});
+
+// ============ SAVE OPERATIONS ============
+function saveTrip(editId) {
+  const memberId = document.getElementById('mTripMember').value;
+  const departure = document.getElementById('mTripDeparture').value;
+  const returnDate = document.getElementById('mTripReturn').value;
+  const purpose = document.getElementById('mTripPurpose').value;
+
+  if (!memberId || !departure) { alert('請填寫成員同離港日期。'); return; }
+  if (returnDate && returnDate < departure) { alert('返港日期必須喺離港日期之後。'); return; }
+
+  if (editId) {
+    const idx = data.trips.findIndex(t => t.id === editId);
+    if (idx >= 0) data.trips[idx] = { ...data.trips[idx], memberId, departureDate: departure, returnDate, purpose };
+  } else {
+    data.trips.push({ id: genId(), memberId, departureDate: departure, returnDate, purpose });
+  }
+
+  saveData(data);
+  closeModal('tripModal');
+  render(getCurrentTab());
+}
+
+function deleteTrip(id) {
+  if (!confirm('要刪除呢筆出行記錄嗎？')) return;
+  data.trips = data.trips.filter(t => t.id !== id);
+  saveData(data);
+  render(getCurrentTab());
+}
+
+function saveMember(editId) {
+  const name = document.getElementById('mMemberName').value.trim();
+  const grantDate = document.getElementById('mGrantDate').value;
+  const relationship = document.getElementById('mRelationship').value;
+  const notes = document.getElementById('mNotes').value.trim();
+
+  if (!name || !grantDate) { alert('請填寫姓名同批准日期。'); return; }
+
+  if (editId) {
+    const idx = data.members.findIndex(m => m.id === editId);
+    if (idx >= 0) data.members[idx] = { ...data.members[idx], name, bnoGrantDate: grantDate, relationship, notes };
+  } else {
+    data.members.push({ id: genId(), name, bnoGrantDate: grantDate, relationship, notes });
+  }
+
+  saveData(data);
+  closeModal('memberModal');
+  render(getCurrentTab());
+}
+
+function editMember(id) { showMemberModal(id); }
+
+function deleteMember(id) {
+  if (!confirm('要刪除呢位家庭成員同佢全部嘅出行記錄嗎？')) return;
+  data.members = data.members.filter(m => m.id !== id);
+  data.trips = data.trips.filter(t => t.memberId !== id);
+  saveData(data);
+  render(getCurrentTab());
+}
+
+// ============ PLANNER LOGIC ============
+function calcPlanner() {
+  const memberId = document.getElementById('planMember').value;
+  const departure = document.getElementById('planDeparture').value;
+  const returnDate = document.getElementById('planReturn').value;
+  if (!departure || !returnDate) { alert('請揀選兩個日期。'); return; }
+
+  const member = data.members.find(m => m.id === memberId);
+  if (!member) return;
+
+  const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
+  const calc = calcRollingWindow(member, proposedTrips);
+
+  const currentCalc = calcRollingWindow(member, data.trips);
+  const tripDays = daysBetween(departure, returnDate) + 1;
+
+  // Find worst window
+  let worstBefore = 0;
+  const windowStart = addDays(new Date(), -179);
+  const memberTrips = proposedTrips.filter(t => t.memberId === member.id).sort((a,b) => new Date(a.departureDate) - new Date(b.departureDate));
+
+  memberTrips.forEach(trip => {
+    const te = trip.returnDate ? new Date(trip.returnDate) : new Date();
+    const ts = new Date(trip.departureDate);
+    const ws = new Date(Math.max(ts.getTime(), windowStart.getTime()));
+    const we = new Date(Math.min(te.getTime(), new Date()));
+    if (ws <= we) {
+      const d = daysBetween(ws.toISOString().split('T')[0], we.toISOString().split('T')[0]) + 1;
+      worstBefore = Math.max(worstBefore, d);
+    }
+  });
+
+  let resultHtml = `
+    <div class="card ${calc.status === 'green' ? '' : calc.status === 'amber' ? '' : ''}">
+      <h2>${esc(member.name)} 嘅結果</h2>
+      <div class="${calc.status === 'green' ? 'info-box' : calc.status === 'amber' ? 'warning-box' : 'danger-box'}">
+        <strong>${calc.status === 'green' ? '可以出行' : calc.status === 'amber' ? '請留意' : '無法出行 - 會超出限制'}</strong><br>
+        目前: ${currentCalc.daysAbsentInWindow}/180 日 &nbsp;|&nbsp; 出行後: ${calc.daysAbsentInWindow}/180 日
+      </div>
+      <div class="grid3">
+        <div class="stat">
+          <div class="stat-value">${tripDays}</div>
+          <div class="stat-label">出行持續時間 (日)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" style="color:${calc.daysAbsentInWindow >= 180 ? 'var(--red)' : calc.daysAbsentInWindow >= 120 ? 'var(--amber)' : 'var(--green)'}">${calc.daysAbsentInWindow}</div>
+          <div class="stat-label">窗口期日數 (出行後)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">${calc.remaining}</div>
+          <div class="stat-label">餘下日數</div>
+        </div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${Math.min(100, Math.round((calc.daysAbsentInWindow/180)*100))}%;background:${calc.status === 'green' ? 'var(--green)' : calc.status === 'amber' ? 'var(--amber)' : 'var(--red)'}"></div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('planResult').innerHTML = resultHtml;
+}
+
+function calcScenarios() {
+  const memberId = document.getElementById('scenarioMember').value;
+  const departure = document.getElementById('scenarioDate').value;
+  if (!memberId || !departure) { alert('請揀選成員同日期。'); return; }
+
+  const member = data.members.find(m => m.id === memberId);
+  if (!member) return;
+
+  const durations = [7, 14, 30, 60, 90, 120, 150, 180];
+  const currentCalc = calcRollingWindow(member, data.trips);
+
+  let rows = durations.map(d => {
+    const returnDate = addDays(departure, d - 1).toISOString().split('T')[0];
+    const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
+    const calc = calcRollingWindow(member, proposedTrips);
+    const safe = calc.status === 'green' ? '✓' : calc.status === 'amber' ? '⚠' : '✗';
+    return `<tr>
+      <td>${d} days</td>
+      <td>${fmt(returnDate)}</td>
+      <td>${calc.daysAbsentInWindow}/180</td>
+      <td>仲有 ${calc.remaining} 日</td>
+      <td>${safe}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('scenarioResult').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>持續時間</th><th>返港日期</th><th>窗口期日數</th><th>餘下日數</th><th>狀態</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ============ EXPORT/IMPORT ============
+function exportData() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `bno-tracker-${todayStr()}.json`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function importData() {
+  document.getElementById('importInput').click();
+}
+
+function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (imported.members) { data = imported; saveData(data); render(getCurrentTab()); }
+      else alert('無效嘅文件格式。');
+    } catch { alert('無法解析檔案。'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function exportCSV() {
+  if (data.trips.length === 0) { alert('冇出行記錄可以匯出。'); return; }
+  let csv = '成員,離港日期,返港日期,持續時間 (日),目的\n';
+  data.trips.forEach(t => {
+    const name = getMemberName(t.memberId);
+    const dur = t.returnDate ? daysBetween(t.departureDate, t.returnDate) : daysBetween(t.departureDate, todayStr());
+    csv += `"${name}","${t.departureDate}","${t.returnDate || ''}",${dur},"${t.purpose || ''}"\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `bno-trips-${todayStr()}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ============ HELPERS ============
+function genId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function getMemberName(id) { const m = data.members.find(x => x.id === id); return m ? m.name : 'Unknown'; }
+function getCurrentTab() {
+  const tabs = document.querySelectorAll('.tab');
+  for (let i = 0; i < tabs.length; i++) { if (tabs[i].classList.contains('active')) { const names = ['dashboard','members','trips','planner']; return names[i]; } }
+  return 'dashboard';
+}
+
+// ============ INIT ============
+render('dashboard');
+
+// After render, draw dashboard chart if on dashboard tab
+function drawDashboardChart() {
+  const canvas = document.getElementById('dashboardChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const results = data.members.map(m => ({ name: m.name, calc: calcRollingWindow(m, data.trips) }));
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: results.map(r => r.name),
+      datasets: [
+        {
+          label: '已用日數',
+          data: results.map(r => r.calc.daysAbsentInWindow),
+          backgroundColor: results.map(r => r.calc.status === 'green' ? '#0d8c44' : r.calc.status === 'amber' ? '#b45309' : '#dc2626'),
+          borderRadius: 4,
+        },
+        {
+          label: '餘下日數',
+          data: results.map(r => r.calc.remaining),
+          backgroundColor: '#e2e5ea',
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, max: 180, beginAtZero: true, title: { display: true, text: '日數' } }
+      },
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => `狀態: ${items[0].dataset.label === '已用日數' ? (results[items[0].dataIndex].calc.status === 'green' ? '正常' : results[items[0].dataIndex].calc.status === 'amber' ? '警告' : '超出限制') : ''}`
+          }
+        }
+      }
+    }
+  });
+}
+
+// Patch render to draw chart after dashboard
+const origRender = render;
+render = function(tab) {
+  origRender(tab);
+  if (tab === 'dashboard') setTimeout(drawDashboardChart, 100);
+};
+render('dashboard');
+</script>
+</body>
+</html>
