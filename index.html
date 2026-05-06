@@ -157,12 +157,6 @@ const I18N = {
     currentLine: (a, b) => `目前: ${a}/180 日  |  出行後: ${b}/180 日`,
     tripDurationLabel: '出行持續時間 (日)',
     daysWindowAfter: '窗口期日數 (出行後)',
-    scenariosTitle: '快速出行情景',
-    scenariosDesc: '並排比較常見出行持續時間。',
-    btnShowScenarios: '顯示情景',
-    colDurationDays: '持續時間', colReturnDate: '返港日期', colWindowFraction: '窗口期日數', colDaysLeft: '餘下日數', colSafeIcon: '狀態',
-    daysLeftCell: (n) => `仲有 ${n} 日`,
-    durationCell: (n) => `${n} 日`,
     titleMembers: '家庭成員',
     addMemberTitle: '加入家庭成員', editMemberTitle: '編輯成員',
     fullName: '全名', fullNamePlaceholder: '例如: 陳大文',
@@ -179,7 +173,6 @@ const I18N = {
     alertReturnAfter: '返港日期必須喺離港日期之後。',
     confirmDelTrip: '要刪除呢筆出行記錄嗎？',
     alertTwoDates: '請揀選兩個日期。',
-    alertMemberAndDate: '請揀選成員同日期。',
     alertNoTrips: '冇出行記錄可以匯出。',
     alertInvalidFile: '無效嘅文件格式。',
     alertCantParse: '無法解析檔案。',
@@ -232,12 +225,6 @@ const I18N = {
     currentLine: (a, b) => `Current: ${a}/180 days  |  After trip: ${b}/180 days`,
     tripDurationLabel: 'Trip Duration (days)',
     daysWindowAfter: 'Window Days (after trip)',
-    scenariosTitle: 'Quick Trip Scenarios',
-    scenariosDesc: 'Compare common trip durations side by side.',
-    btnShowScenarios: 'Show Scenarios',
-    colDurationDays: 'Duration', colReturnDate: 'Return Date', colWindowFraction: 'Window Days', colDaysLeft: 'Days Left', colSafeIcon: 'Status',
-    daysLeftCell: (n) => `${n} days left`,
-    durationCell: (n) => `${n} days`,
     titleMembers: 'Family Members',
     addMemberTitle: 'Add Family Member', editMemberTitle: 'Edit Member',
     fullName: 'Full Name', fullNamePlaceholder: 'e.g. John Doe',
@@ -254,7 +241,6 @@ const I18N = {
     alertReturnAfter: 'Return date must be on or after the departure date.',
     confirmDelTrip: 'Delete this trip record?',
     alertTwoDates: 'Please pick both dates.',
-    alertMemberAndDate: 'Please pick a member and a date.',
     alertNoTrips: 'No trips to export.',
     alertInvalidFile: 'Invalid file format.',
     alertCantParse: 'Could not parse the file.',
@@ -369,10 +355,10 @@ function todayStr() {
 
 // ============ BNO ILR CALCULATION ENGINE ============
 // `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling 180-day
-// window. Defaults to today. The What-If Planner / Quick Trip Scenarios pass the
-// proposed trip's RETURN date so future trips are evaluated at trip end — this
-// is the only point at which a long future trip's absence days are fully inside
-// the rolling window. ILR eligibility (isEligible / daysToILR) always uses today.
+// window. Defaults to today. The What-If Planner passes the proposed trip's
+// RETURN date so future trips are evaluated at trip end — this is the only
+// point at which a long future trip's absence days are fully inside the rolling
+// window. ILR eligibility (isEligible / daysToILR) always uses today.
 function calcRollingWindow(member, trips, referenceDate) {
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -686,25 +672,7 @@ function renderPlanner() {
         </div>
       </div>
     </div>
-    <div id="planResult"></div>
-    <div class="card" style="margin-top:16px">
-      <h2>${t('scenariosTitle')}</h2>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:12px">${t('scenariosDesc')}</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>${t('lblMember')}</label>
-          <select id="scenarioMember">${options}</select>
-        </div>
-        <div class="form-group">
-          <label>${t('lblDeparture')}</label>
-          <input type="date" id="scenarioDate" value="${todayStr()}">
-        </div>
-        <div class="form-group" style="justify-content:flex-end">
-          <button class="btn btn-primary" onclick="calcScenarios()">${t('btnShowScenarios')}</button>
-        </div>
-      </div>
-      <div id="scenarioResult"></div>
-    </div>`;
+    <div id="planResult"></div>`;
 }
 
 // ============ MODALS ============
@@ -913,40 +881,6 @@ function calcPlanner() {
     </div>`;
 
   document.getElementById('planResult').innerHTML = resultHtml;
-}
-
-function calcScenarios() {
-  const memberId = document.getElementById('scenarioMember').value;
-  const departure = document.getElementById('scenarioDate').value;
-  if (!memberId || !departure) { alert(t('alertMemberAndDate')); return; }
-
-  const member = data.members.find(m => m.id === memberId);
-  if (!member) return;
-
-  const durations = [7, 14, 30, 60, 90, 120, 150, 180];
-
-  let rows = durations.map(d => {
-    const returnDate = toDateStr(addDays(departure, d - 1));
-    const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-    // Evaluate at trip end so a 180-day scenario actually shows the breach.
-    const calc = calcRollingWindow(member, proposedTrips, returnDate);
-    const safe = calc.status === 'green' ? '✓' : calc.status === 'amber' ? '⚠' : '✗';
-    return `<tr>
-      <td>${t('durationCell')(d)}</td>
-      <td>${fmt(returnDate)}</td>
-      <td>${calc.daysAbsentInWindow}/180</td>
-      <td>${t('daysLeftCell')(calc.remaining)}</td>
-      <td>${safe}</td>
-    </tr>`;
-  }).join('');
-
-  document.getElementById('scenarioResult').innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>${t('colDurationDays')}</th><th>${t('colReturnDate')}</th><th>${t('colWindowFraction')}</th><th>${t('colDaysLeft')}</th><th>${t('colSafeIcon')}</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
 }
 
 // ============ EXPORT/IMPORT ============
