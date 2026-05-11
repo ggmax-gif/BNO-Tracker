@@ -1,9 +1,11 @@
 # BNO Tracker
 
-A bilingual (繁體中文 / English) absence-day tracker for families on the UK
-**BNO (British National Overseas) visa route**. Helps BNO holders and their
-dependants stay on the right side of the **180-day-in-any-rolling-12-month**
-absence rule that gates Indefinite Leave to Remain (ILR).
+🌐 **English** · [繁體中文](README.zh-HK.md)
+
+An absence-day tracker for families on the UK **BNO (British National
+Overseas) visa route**. Helps BNO holders and their dependants stay on the
+right side of the **180-day-in-any-rolling-12-month** absence rule that gates
+Indefinite Leave to Remain (ILR).
 
 **Live demo:** <https://ggmax-gif.github.io/BNO-Tracker/>
 
@@ -49,8 +51,8 @@ This tracker encodes those rules and exposes them in the UI.
   (not just today — that distinction matters and is where most trackers go
   wrong).
 - **Export / import** — JSON for full backup, CSV for spreadsheet analysis.
-- **Bilingual** — switches between traditional Chinese and English; choice
-  persists across visits.
+- **Bilingual UI** — switches between Traditional Chinese and English;
+  choice persists across visits.
 
 ---
 
@@ -109,4 +111,4 @@ accordingly.
 
 ## Licence
 
-MIT
+[MIT](LICENSE)
