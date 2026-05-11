@@ -83,6 +83,10 @@
   .warning-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--amber); margin-bottom: 16px; }
   .danger-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); margin-bottom: 16px; }
 
+  .app-footer { max-width: 1200px; margin: 24px auto 0; padding: 16px 24px 32px; font-size: 12px; color: var(--text2); line-height: 1.6; border-top: 1px solid var(--border); }
+  .app-footer strong { color: var(--text); }
+  .app-footer a { color: var(--accent); text-decoration: none; }
+  .app-footer a:hover { text-decoration: underline; }
   @media print { .tabs, .header-actions, .btn, .tab { display: none !important; } .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; } }
   @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .container { padding: 10px; } }
 </style>
@@ -108,6 +112,8 @@
 <div class="tabs" id="tabs"></div>
 
 <div class="container" id="app"></div>
+
+<footer id="appFooter" class="app-footer"></footer>
 
 <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
@@ -145,6 +151,10 @@ const I18N = {
     midnightRuleBody: '一日只計為「離港日」，係指你喺英國時間午夜時身處英國境外。 出發日 計入離港日（午夜時人喺外面），返港日 不計（午夜前已返到英國）。所以 12月7日去、2月4日返 → 59 日離港，唔係 60 日。',
     crownDepTitle: '⚠️ 隱藏陷阱：皇家屬地 + 愛爾蘭',
     crownDepBody: '去 澤西、根西、馬恩島（皇家屬地）或 愛爾蘭共和國 雖然屬於共同旅行區（CTA），但係內政部會 當作離開英國 計算。記得照常喺出行記錄度填返。',
+    disclaimerHeading: '免責聲明',
+    disclaimerBody: '本工具僅供 個人記錄同參考 之用，<strong>並非法律意見</strong>。BNO 簽證同 ILR 規則隨時會變，亦有個別情況。任何重要決定 請以 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">UKVI 官方指引</a> 為準，必要時諮詢註冊移民律師。',
+    privacyNote: '所有資料只 儲存喺你部裝置嘅瀏覽器（localStorage），唔會上傳去任何伺服器。',
+    sourceLink: '原始碼',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
@@ -217,6 +227,10 @@ const I18N = {
     midnightRuleBody: 'A day only counts as "absent" if you are outside the UK at midnight (UK time). The day of departure DOES count (you are abroad at midnight); the day of return does NOT (you are back in the UK by midnight). So a 7 Dec departure and 4 Feb return = 59 absent days, not 60.',
     crownDepTitle: '⚠️ Hidden trap: Crown Dependencies + Ireland',
     crownDepBody: 'Trips to Jersey, Guernsey, the Isle of Man (Crown Dependencies) or the Republic of Ireland DO count as absences from the UK for ILR — even though they are part of the Common Travel Area. Record them as trips just like anywhere else.',
+    disclaimerHeading: 'Disclaimer',
+    disclaimerBody: 'This tool is for <strong>personal record-keeping only and is not legal advice</strong>. BNO visa and ILR rules change, and individual circumstances vary. Always rely on the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official UKVI guidance</a> and consult a registered immigration solicitor for any decision that matters.',
+    privacyNote: 'All data is stored only in your browser (localStorage) — nothing is uploaded to any server.',
+    sourceLink: 'Source code',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
@@ -297,6 +311,11 @@ function applyStaticI18n() {
   `;
   const tab = getCurrentTab();
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  // Footer (disclaimer + privacy + source link)
+  document.getElementById('appFooter').innerHTML = `
+    <div><strong>${t('disclaimerHeading')}.</strong> ${t('disclaimerBody')}</div>
+    <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a></div>
+  `;
 }
 
 // ============ DATA LAYER ============
