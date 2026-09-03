@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BNO 身份狀態追蹤器</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f7f8fa;
@@ -60,6 +59,7 @@
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .btn-danger { color: var(--red); }
   .btn-danger:hover { background: var(--red-bg); }
+  .btn:disabled, .lang-toggle button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   .form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
   .form-group { display: flex; flex-direction: column; gap: 3px; }
   .form-group label { font-size: 12px; color: var(--text2); font-weight: 500; }
@@ -78,15 +78,37 @@
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text2); }
   .empty-state p { margin: 8px 0; }
-  .chart-container { position: relative; height: 250px; }
+  /* Cross-member comparison bar. Replaces Chart.js: the library was 201 KB
+     (4x this whole file) purely to draw a stacked bar the per-member progress
+     bars already imply, and it was the only thing this app fetched over the
+     network. */
+  .cmp { display: flex; flex-direction: column; gap: 10px; }
+  .cmp-row { display: grid; grid-template-columns: minmax(70px, 140px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+  .cmp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+  .cmp-track { position: relative; height: 20px; background: var(--border); border-radius: 4px; }
+  .cmp-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  /* The 180 cap is a marker inside the track, not the end of it - a member
+     over the limit must render past the line rather than pinning at it. */
+  .cmp-cap { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); opacity: .5; }
+  .cmp-val { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 3.2em; text-align: right; }
+  .cmp-legend { margin-top: 12px; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+  .cmp-legend i { display: inline-block; width: 2px; height: 12px; background: var(--text); opacity: .5; }
+  .calc-notice { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  .calc-notice button { flex: none; }
   .info-box { background: var(--accent2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--accent); margin-bottom: 16px; }
   .warning-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--amber); margin-bottom: 16px; }
   .danger-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); margin-bottom: 16px; }
+
+  /* A failed write must be visible. On disk this is a full volume or a
+     permissions problem, not a cache miss - silence would mean the user
+     believes a trip was recorded when it was not. */
+  .save-error { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 200; background: var(--red-bg); color: var(--red); border: 1px solid var(--red); padding: 10px 16px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); max-width: 90%; }
 
   .app-footer { max-width: 1200px; margin: 24px auto 0; padding: 16px 24px 32px; font-size: 12px; color: var(--text2); line-height: 1.6; border-top: 1px solid var(--border); }
   .app-footer strong { color: var(--text); }
   .app-footer a { color: var(--accent); text-decoration: none; }
   .app-footer a:hover { text-decoration: underline; }
+  .build-id { font-variant-numeric: tabular-nums; opacity: .75; white-space: nowrap; }
   @media print { .tabs, .header-actions, .btn, .tab { display: none !important; } .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; } }
   @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .container { padding: 10px; } }
 </style>
@@ -100,12 +122,12 @@
   </div>
   <div class="header-actions">
     <div class="lang-toggle" role="group" aria-label="Language">
-      <button id="langZh" onclick="setLang('zh')">中文</button>
-      <button id="langEn" onclick="setLang('en')">English</button>
+      <button id="langZh" onclick="setLang('zh')" disabled>中文</button>
+      <button id="langEn" onclick="setLang('en')" disabled>English</button>
     </div>
-    <button class="btn" id="btnExportJson" onclick="exportData()"></button>
-    <button class="btn" id="btnImportJson" onclick="importData()"></button>
-    <button class="btn" id="btnExportCsv" onclick="exportCSV()"></button>
+    <button class="btn" id="btnExportJson" onclick="exportData()" disabled></button>
+    <button class="btn" id="btnImportJson" onclick="importData()" disabled></button>
+    <button class="btn" id="btnExportCsv" onclick="exportCSV()" disabled></button>
   </div>
 </div>
 
@@ -115,9 +137,64 @@
 
 <footer id="appFooter" class="app-footer"></footer>
 
+<div id="saveError" class="save-error" hidden></div>
+
 <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
 <script>
+// ============ BUILD IDENTITY ============
+// Two bundles of the same version with no version shown anywhere is how you end
+// up with a stale copy in /Applications and no way to tell. APP_VERSION is the
+// single source of truth: desktop/scripts/sync.mjs refuses to build when
+// tauri.conf.json disagrees, so a bundle can never claim a version the UI does
+// not show. BUILD_STAMP is substituted by that script in the COPY it writes to
+// dist/ - never in this file - which is what lets the desktop build carry a real
+// build time while the web build stays a static file with no build step.
+const APP_VERSION = '0.2.0';
+const BUILD_STAMP = '__BUILD_STAMP__';
+
+// ============ RULES PROVENANCE ============
+// The rules encoded here are a reading of the published UKVI guidance as of a
+// date. That date has a 90-day shelf life: past it the app says so instead of
+// carrying on rendering confident numbers at people deciding when to file for
+// ILR. This is what lets the tool degrade honestly rather than silently, and it
+// is why the tool does not need to track rule changes - it stops claiming to be
+// current on its own.
+//
+// RULES_CHECKED IS A CLAIM THAT A HUMAN READ GOV.UK ON THAT DAY.
+// Bumping it to silence the banner, without re-reading the guidance, is the one
+// edit to this file that converts an honesty feature into a lie. Empty means
+// nobody has checked, and the app says exactly that.
+const RULES_CHECKED = '2026-09-03';  // 'YYYY-MM-DD', or '' if never verified
+const RULES_SHELF_LIFE_DAYS = 90;
+
+function rulesStatus() {
+  if (!RULES_CHECKED) return { state: 'unverified', age: null };
+  const age = daysBetween(RULES_CHECKED, todayStr());
+  if (!isFinite(age)) return { state: 'unverified', age: null };
+  return { state: age >= RULES_SHELF_LIFE_DAYS ? 'stale' : 'fresh', age };
+}
+
+// Loud only when it should be. Fresh states say their piece quietly in the
+// footer; stale and unverified get a box above the numbers on every tab.
+function rulesBanner() {
+  const r = rulesStatus();
+  if (r.state === 'fresh') return '';
+  const msg = r.state === 'unverified' ? t('rulesUnverified') : t('rulesStale')(fmt(RULES_CHECKED), r.age);
+  return `<div class="warning-box">${msg}</div>`;
+}
+
+function rulesFooterLine() {
+  const r = rulesStatus();
+  if (r.state === 'unverified') return t('rulesFooterUnverified');
+  return t('rulesFooterChecked')(fmt(RULES_CHECKED)) + (r.state === 'stale' ? ' ' + t('rulesFooterStale') : '');
+}
+
+function buildLabel() {
+  const stamp = BUILD_STAMP.startsWith('__') ? '' : ' · ' + BUILD_STAMP;
+  return 'v' + APP_VERSION + ' · ' + (isDesktop ? t('shellDesktop') : t('shellWeb')) + stamp;
+}
+
 // ============ I18N ============
 const I18N = {
   zh: {
@@ -135,18 +212,19 @@ const I18N = {
     daysInWindow: '窗口期日數', daysRemaining: '餘下日數', totalDaysAbsent: '總計離港日數',
     bnoGrantDate: 'BNO 批准日期',
     ilrEligible: '符合 ILR 資格',
+    ilrNotEligible: '不符 ILR 資格',
     ilrApprox: (n) => `ILR 大概 ${n} 日後`,
     ilrIn: (n) => `ILR 喺 ${n} 日後`,
-    worstWindowMsg: (n) => `最嚴重嘅180日周期: ${n} 日離港`,
+    worstWindowMsg: (n) => `最嚴重嘅 12 個月周期: ${n} 日離港`,
     statFamily: '家庭成員', statWithin: '喺限制以內', statNear: '接近限制', statOver: '超出限制',
-    chartTitle: '目前窗口期餘下日數 (按成員)',
+    chartTitle: '目前窗口期離港日數 (按成員)',
     colName: '姓名', colWindowDays: '窗口期日數', colStatus: '狀態', colIlrStatus: 'ILR 狀態', colActions: '操作',
     btnEdit: '編輯', btnDelete: '刪除', btnAddMember: '+ 加入成員',
     noMembers: '尚未加入任何家庭成員', granted: '批准日期',
     eligibleBadge: '符合資格',
     approxDays: (n) => `大概 ${n} 日`,
     daysShort: (n) => `${n} 日`,
-    tipMembers: '提示: 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面嘅每 6 個月周期。',
+    tipMembers: '提示: 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面每一個滾動 12 個月窗口。',
     midnightRuleTitle: '午夜規則 (Midnight Rule)',
     midnightRuleBody: '一日只計為「離港日」，係指你喺英國時間午夜時身處英國境外。 出發日 計入離港日（午夜時人喺外面），返港日 不計（午夜前已返到英國）。所以 12月7日去、2月4日返 → 59 日離港，唔係 60 日。',
     crownDepTitle: '⚠️ 隱藏陷阱：皇家屬地 + 愛爾蘭',
@@ -155,13 +233,21 @@ const I18N = {
     disclaimerBody: '本工具僅供 個人記錄同參考 之用，<strong>並非法律意見</strong>。BNO 簽證同 ILR 規則隨時會變，亦有個別情況。任何重要決定 請以 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">UKVI 官方指引</a> 為準，必要時諮詢註冊移民律師。',
     privacyNote: '所有資料只 儲存喺你部裝置嘅瀏覽器（localStorage），唔會上傳去任何伺服器。',
     sourceLink: '原始碼',
+    shellDesktop: '桌面版', shellWeb: '網頁版',
+    rulesUnverified: '⚠️ <strong>呢個工具寫嘅 UKVI 規則未核對過。</strong> 信呢度任何數字之前，請先去 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">官方指引</a> 睇清楚。',
+    rulesStale: (d, n) => `⚠️ <strong>UKVI 規則最後核對日期係 ${d}，已經隔咗 ${n} 日。</strong> 規則有可能改咗。信呢度啲數字之前，請先去 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">官方指引</a> 核對返。`,
+    rulesFooterChecked: (d) => `UKVI 規則最後核對日期：${d}。`,
+    rulesFooterStale: '（已超過 90 日，可能過時。）',
+    rulesFooterUnverified: 'UKVI 規則未核對過 gov.uk。',
+    calcNoticeBody: '<strong>你嘅數字可能同之前唔同咗。</strong> 離港日數嘅計法喺 2026 年 9 月 3 日改正咗：而家係計 <strong>任何 12 個月內</strong> 嘅 180 日，即係 UKVI 真正要求嗰個。舊版本淨係睇 180 日窗口，計少咗 — 有啲人根本未夠資格，都顯示咗「符合 ILR 資格」。<strong>你嘅出行記錄一個字都冇改過</strong>，變嘅淨係計法。',
+    calcNoticeAck: '知道喇',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
     daysSuffix: (n) => `${n} 日`,
     titleTrips: '出行記錄',
     plannerTitle: '假設情況出行規劃器',
-    plannerDesc: '計劃未來出行，睇吓點影響你嘅180日滾動窗口期。',
+    plannerDesc: '計劃未來出行，睇吓點影響你嘅 12 個月滾動窗口期。',
     plannerEmptyTitle: '先加入家庭成員',
     plannerEmptyMsg: '規劃器需要成員資料先可以計算可用日數。',
     lblMember: '家庭成員', lblDeparture: '離港日期', lblReturn: '返港日期',
@@ -188,10 +274,26 @@ const I18N = {
     confirmDelTrip: '要刪除呢筆出行記錄嗎？',
     alertTwoDates: '請揀選兩個日期。',
     alertNoTrips: '冇出行記錄可以匯出。',
-    alertInvalidFile: '無效嘅文件格式。',
+    alertInvalidFile: '無效嘅文件格式，冇匯入到。',
+    vNotObject: '最外層唔係一個物件。',
+    vMembers: '搵唔到 members 陣列。',
+    vTrips: '搵唔到 trips 陣列。',
+    vMemberShape: '有成員唔係物件。',
+    vMemberId: '有成員冇 id。',
+    vMemberDup: (id) => `成員 id 重複：${id}`,
+    vMemberName: '有成員嘅 name 唔係文字。',
+    vMemberDate: (who) => `${who} 嘅 BNO 批准日期唔係 YYYY-MM-DD 格式。`,
+    vTripShape: '有出行記錄唔係物件。',
+    vTripId: '有出行記錄冇 id。',
+    vTripOrphan: (id) => `有出行記錄搵唔到對應成員：${id}`,
+    vTripDate: '有出行記錄嘅日期唔係 YYYY-MM-DD 格式。',
+    vTripOrder: '有出行記錄嘅返港日期早過離港日期。',
     alertCantParse: '無法解析檔案。',
-    chartUsed: '已用日數', chartRemaining: '餘下日數',
-    chartStatusLabel: '狀態', chartDaysAxis: '日數',
+    chartCapLabel: '直線 = 180 日上限',
+    saveFailMsg: '儲存失敗 — 你啱啱嘅改動可能未寫入。',
+    loadFailTitle: '讀唔到你嘅資料檔',
+    loadFailBody: (where) => `程式冇改動過亦都冇覆蓋過個檔。你嘅資料同每日備份喺：${where}`,
+    loadFailWeb: '程式冇改動過亦都冇覆蓋過你嘅資料。如果你之前匯出過 JSON 備份，可以匯入返嚟復原。',
     csvHeader: '成員,離港日期,返港日期,持續時間 (日),目的',
     unknown: '未知',
     locale: 'zh-HK',
@@ -211,9 +313,10 @@ const I18N = {
     daysInWindow: 'Days in Window', daysRemaining: 'Days Remaining', totalDaysAbsent: 'Total Days Absent',
     bnoGrantDate: 'BNO Grant Date',
     ilrEligible: 'ILR Eligible',
+    ilrNotEligible: 'Not ILR eligible',
     ilrApprox: (n) => `ILR in ~${n} days`,
     ilrIn: (n) => `ILR in ${n} days`,
-    worstWindowMsg: (n) => `Worst 180-day window: ${n} days absent`,
+    worstWindowMsg: (n) => `Worst 12-month window: ${n} days absent`,
     statFamily: 'Family Members', statWithin: 'Within Limit', statNear: 'Approaching Limit', statOver: 'Exceeded Limit',
     chartTitle: 'Current Window Days (by Member)',
     colName: 'Name', colWindowDays: 'Window Days', colStatus: 'Status', colIlrStatus: 'ILR Status', colActions: 'Actions',
@@ -222,7 +325,7 @@ const I18N = {
     eligibleBadge: 'Eligible',
     approxDays: (n) => `~${n} days`,
     daysShort: (n) => `${n} days`,
-    tipMembers: 'Tip: Set each person’s BNO grant date to calculate ILR eligibility. The tracker checks every 6-month period within the 5-year qualifying timeframe.',
+    tipMembers: 'Tip: Set each person’s BNO grant date to calculate ILR eligibility. The tracker checks every rolling 12-month window within the 5-year qualifying period.',
     midnightRuleTitle: 'The midnight rule',
     midnightRuleBody: 'A day only counts as "absent" if you are outside the UK at midnight (UK time). The day of departure DOES count (you are abroad at midnight); the day of return does NOT (you are back in the UK by midnight). So a 7 Dec departure and 4 Feb return = 59 absent days, not 60.',
     crownDepTitle: '⚠️ Hidden trap: Crown Dependencies + Ireland',
@@ -231,13 +334,21 @@ const I18N = {
     disclaimerBody: 'This tool is for <strong>personal record-keeping only and is not legal advice</strong>. BNO visa and ILR rules change, and individual circumstances vary. Always rely on the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official UKVI guidance</a> and consult a registered immigration solicitor for any decision that matters.',
     privacyNote: 'All data is stored only in your browser (localStorage) — nothing is uploaded to any server.',
     sourceLink: 'Source code',
+    shellDesktop: 'Desktop', shellWeb: 'Web',
+    rulesUnverified: '⚠️ <strong>The UKVI rules encoded here have not been verified.</strong> Check the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official guidance</a> before relying on any number in this tool.',
+    rulesStale: (d, n) => `⚠️ <strong>UKVI rules last checked ${d}, ${n} days ago.</strong> They may have changed since. Verify against the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official guidance</a> before relying on these numbers.`,
+    rulesFooterChecked: (d) => `UKVI rules last checked ${d}.`,
+    rulesFooterStale: '(Over 90 days ago — may be out of date.)',
+    rulesFooterUnverified: 'UKVI rules not verified against gov.uk.',
+    calcNoticeBody: '<strong>Your numbers may have changed.</strong> The absence calculation was corrected on 3 September 2026: it now measures 180 days in <strong>any rolling 12 months</strong>, which is what UKVI actually requires. The previous version measured a 180-day window and under-reported — some people were shown as eligible for ILR when they were not. <strong>None of your trip records have been altered</strong>; only the calculation changed.',
+    calcNoticeAck: 'Got it',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
     daysSuffix: (n) => `${n} days`,
     titleTrips: 'Trip Records',
     plannerTitle: 'What-If Trip Planner',
-    plannerDesc: 'Plan a future trip and see how it affects your rolling 180-day window.',
+    plannerDesc: 'Plan a future trip and see how it affects your rolling 12-month window.',
     plannerEmptyTitle: 'Add a family member first',
     plannerEmptyMsg: 'The planner needs member data before it can calculate available days.',
     lblMember: 'Family Member', lblDeparture: 'Departure Date', lblReturn: 'Return Date',
@@ -264,10 +375,26 @@ const I18N = {
     confirmDelTrip: 'Delete this trip record?',
     alertTwoDates: 'Please pick both dates.',
     alertNoTrips: 'No trips to export.',
-    alertInvalidFile: 'Invalid file format.',
+    alertInvalidFile: 'Invalid file — nothing was imported.',
+    vNotObject: 'The top level is not an object.',
+    vMembers: 'No members array found.',
+    vTrips: 'No trips array found.',
+    vMemberShape: 'A member entry is not an object.',
+    vMemberId: 'A member has no id.',
+    vMemberDup: (id) => `Duplicate member id: ${id}`,
+    vMemberName: 'A member name is not text.',
+    vMemberDate: (who) => `${who} has a BNO grant date that is not YYYY-MM-DD.`,
+    vTripShape: 'A trip entry is not an object.',
+    vTripId: 'A trip has no id.',
+    vTripOrphan: (id) => `A trip refers to a member that does not exist: ${id}`,
+    vTripDate: 'A trip date is not YYYY-MM-DD.',
+    vTripOrder: 'A trip returns before it departs.',
     alertCantParse: 'Could not parse the file.',
-    chartUsed: 'Days Used', chartRemaining: 'Days Remaining',
-    chartStatusLabel: 'Status', chartDaysAxis: 'Days',
+    chartCapLabel: 'Line marks the 180-day limit',
+    saveFailMsg: 'Save failed — your last change may not have been written.',
+    loadFailTitle: 'Could not read your data file',
+    loadFailBody: (where) => `Nothing has been changed or overwritten. Your data and daily backups are in: ${where}`,
+    loadFailWeb: 'Nothing has been changed or overwritten. If you exported a JSON backup earlier, you can import it to recover.',
     csvHeader: 'Member,Departure Date,Return Date,Duration (days),Purpose',
     unknown: 'Unknown',
     locale: 'en-GB',
@@ -314,29 +441,132 @@ function applyStaticI18n() {
   // Footer (disclaimer + privacy + source link)
   document.getElementById('appFooter').innerHTML = `
     <div><strong>${t('disclaimerHeading')}.</strong> ${t('disclaimerBody')}</div>
-    <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a></div>
+    <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a> · <span class="build-id">${esc(buildLabel())}</span></div>
+    <div style="margin-top:8px">${rulesFooterLine()}</div>
   `;
 }
 
 // ============ DATA LAYER ============
+// Two shells, one file. Tauri v2 exposes its plugin APIs on window.__TAURI__
+// when `withGlobalTauri` is set, so feature-detecting it here is what lets this
+// single index.html serve both the GitHub Pages build (localStorage) and the
+// desktop build (a real file on disk) with no build step and no branching
+// anywhere else in the app.
 const STORAGE_KEY = 'bno-tracker-data';
+const DATA_FILE = 'bno-tracker.json';
+const BACKUP_DIR = 'backups';
+const BACKUP_KEEP = 30;
+
+const TAURI = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
+const isDesktop = !!TAURI;
+
+// A one-off notice for people whose numbers moved when the rolling window was
+// corrected. Shown only to someone who already had records: a fresh install
+// gets the ack stamped by getDefaultData(), because a new user never saw the old
+// numbers and a correction notice for a version they never used is just noise.
+// Stored with the data rather than per-device so the acknowledgement travels
+// with an export, and so a restored old backup correctly shows it again.
+const CALC_NOTICE_ID = 'rolling-12m-2026-09';
 
 function getDefaultData() {
-  return { familyName: 'Family', members: [], trips: [] };
+  return { familyName: 'Family', members: [], trips: [], calcNoticeAck: CALC_NOTICE_ID };
 }
 
-function loadData() {
-  try {
+function calcNoticeDue() {
+  return data.members.length > 0 && data.calcNoticeAck !== CALC_NOTICE_ID;
+}
+
+function calcNotice() {
+  if (!calcNoticeDue()) return '';
+  return `<div class="info-box calc-notice">
+    <div>${t('calcNoticeBody')}</div>
+    <button class="btn btn-sm" onclick="ackCalcNotice()">${t('calcNoticeAck')}</button>
+  </div>`;
+}
+
+function ackCalcNotice() {
+  data.calcNoticeAck = CALC_NOTICE_ID;
+  persist();
+  render(getCurrentTab());
+}
+
+const WebStore = {
+  async load() {
     const raw = localStorage.getItem(STORAGE_KEY);
+    // A missing key is a first run. A corrupt one is NOT: let it throw so boot()
+    // can stop, rather than silently handing back an empty family.
     return raw ? JSON.parse(raw) : getDefaultData();
-  } catch { return getDefaultData(); }
+  },
+  async save(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); },
+  describe() { return 'localStorage'; }
+};
+
+const DesktopStore = {
+  _dir: null,
+  async _paths() {
+    if (!this._dir) {
+      this._dir = await TAURI.path.appDataDir();
+      await TAURI.fs.mkdir(this._dir, { recursive: true });
+      await TAURI.fs.mkdir(await TAURI.path.join(this._dir, BACKUP_DIR), { recursive: true });
+    }
+    return {
+      file: await TAURI.path.join(this._dir, DATA_FILE),
+      tmp: await TAURI.path.join(this._dir, DATA_FILE + '.tmp'),
+      backups: await TAURI.path.join(this._dir, BACKUP_DIR),
+    };
+  },
+  async load() {
+    const p = await this._paths();
+    if (!(await TAURI.fs.exists(p.file))) return getDefaultData();
+    return JSON.parse(await TAURI.fs.readTextFile(p.file));
+  },
+  async save(d) {
+    const p = await this._paths();
+    await this._backup(p);
+    // Atomic write: a crash between these two lines leaves the previous file
+    // intact. Writing in place would truncate the only copy of a family's
+    // records, which on desktop is the whole dataset rather than a cache.
+    await TAURI.fs.writeTextFile(p.tmp, JSON.stringify(d, null, 2));
+    await TAURI.fs.rename(p.tmp, p.file);
+  },
+  // One snapshot per calendar day, newest BACKUP_KEEP retained. In a browser a
+  // wedged dataset can be cleared from devtools; inside a packaged .app a
+  // non-technical user has no such escape hatch, so keep them one.
+  async _backup(p) {
+    if (!(await TAURI.fs.exists(p.file))) return;
+    const dest = await TAURI.path.join(p.backups, todayStr() + '.json');
+    if (await TAURI.fs.exists(dest)) return;
+    await TAURI.fs.copyFile(p.file, dest);
+    const names = (await TAURI.fs.readDir(p.backups))
+      .filter(e => e.isFile && /^\d{4}-\d{2}-\d{2}\.json$/.test(e.name))
+      .map(e => e.name).sort();
+    for (const n of names.slice(0, Math.max(0, names.length - BACKUP_KEEP))) {
+      await TAURI.fs.remove(await TAURI.path.join(p.backups, n));
+    }
+  },
+  describe() { return this._dir || 'the application data folder'; }
+};
+
+const Store = isDesktop ? DesktopStore : WebStore;
+
+let data = getDefaultData();
+let storeReady = false;
+
+// Never write before the first read has finished. Without this guard a click
+// during a slow load persists an empty dashboard over a real data file - the
+// one bug in this refactor that destroys data rather than merely annoying.
+function persist() {
+  if (!storeReady) return;
+  Store.save(data)
+    .then(() => { document.getElementById('saveError').hidden = true; })
+    .catch(showStoreError);
 }
 
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function showStoreError(err) {
+  const el = document.getElementById('saveError');
+  el.textContent = t('saveFailMsg') + ' ' + (err && err.message ? err.message : String(err));
+  el.hidden = false;
 }
-
-let data = loadData();
 
 // ============ DATE UTILITIES ============
 // IMPORTANT: <input type="date"> values are YYYY-MM-DD strings. `new Date("YYYY-MM-DD")`
@@ -420,11 +650,60 @@ function tripAbsenceDays(trip, evalDate) {
   return daysBetween(toDateStr(r.start), toDateStr(r.end)) + 1;
 }
 
-// `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling 180-day
-// window. Defaults to today. The What-If Planner passes the proposed trip's
-// RETURN date so future trips are evaluated at trip end — this is the only
-// point at which a long future trip's absence days are fully inside the rolling
-// window. ILR eligibility (isEligible / daysToILR) always uses today.
+// ============ ABSENCE TIMELINE ============
+// The rule is "no more than 180 days outside the UK in ANY rolling 12-month
+// period", so every window evaluated here is 365 days long and the cap inside
+// it is 180. Counting over a 180-day window instead — which this file used to
+// do — makes the cap structurally unreachable, because a 180-day window can
+// hold at most 180 absent days. Two 170-day trips seven months apart are 340
+// days in one year, a plain breach, and the old code scored them 170 and
+// passed the applicant as ILR-eligible.
+const WINDOW_DAYS = 365;   // "any 12-month period"
+const MAX_ABSENCE = 180;   // days permitted inside it
+
+// One day-by-day absence timeline per member, indexed from the BNO grant date,
+// with a prefix sum so any window is an O(1) subtraction. It is a day SET
+// rather than a sum of per-trip lengths for two reasons: overlapping trip
+// records (a realistic slip when a family logs the same journey twice) count
+// each day once instead of twice, and the rolling scan below needs a few
+// thousand window queries, which per-trip arithmetic would make quadratic.
+function buildAbsenceTimeline(grantDate, memberTrips, horizon, ongoingEnd) {
+  const span = daysBetween(grantDate, horizon);
+  // Missing or unparseable grant date, or a grant date after the horizon:
+  // return an empty timeline so every query is 0 rather than throwing.
+  if (!isFinite(span) || span < 0) return { prefix: new Int32Array(1), n: 0 };
+  const n = span + 1;
+  const flags = new Uint8Array(n);
+  memberTrips.forEach(trip => {
+    const r = tripAbsenceRange(trip, ongoingEnd);
+    if (!r.valid) return;
+    // A trip already under way when the visa was granted is clipped at index 0.
+    const from = Math.max(0, daysBetween(grantDate, r.start));
+    const to = Math.min(n - 1, daysBetween(grantDate, r.end));
+    for (let i = from; i <= to; i++) flags[i] = 1;
+  });
+  const prefix = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + flags[i];
+  return { prefix, n };
+}
+
+// Absent days in [from, to], both day-indices counted from the grant date. The
+// range is clipped to the timeline, so a window reaching back past the grant
+// date counts only the days actually spent on the visa.
+function absentInRange(tl, from, to) {
+  if (tl.n === 0) return 0;
+  const a = Math.max(0, from);
+  const b = Math.min(tl.n - 1, to);
+  return a > b ? 0 : tl.prefix[b + 1] - tl.prefix[a];
+}
+
+// `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling
+// 12-month window. Defaults to today. The What-If Planner passes the proposed
+// trip's RETURN date so future trips are evaluated at trip end — this is the
+// only point at which a long future trip's absence days are fully inside the
+// window. ILR eligibility (isEligible / daysToILR / worstWindow) always uses
+// today, so a merely planned trip never retroactively changes whether the
+// applicant has been compliant so far.
 function calcRollingWindow(member, trips, referenceDate) {
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -437,74 +716,44 @@ function calcRollingWindow(member, trips, referenceDate) {
   const memberTrips = trips.filter(tr => tr.memberId === member.id)
     .sort((a,b) => parseDate(a.departureDate) - parseDate(b.departureDate));
 
-  const windowStart = addDays(evalDate, -179);
-
-  let daysAbsentInWindow = 0;
-  let absentPeriods = [];
-
-  memberTrips.forEach(trip => {
-    const r = tripAbsenceRange(trip, evalDate);
-    if (!r.valid) return;
-    const overlapStart = new Date(Math.max(r.start.getTime(), windowStart.getTime()));
-    const overlapEnd = new Date(Math.min(r.end.getTime(), evalDate.getTime()));
-    if (overlapStart <= overlapEnd) {
-      const days = daysBetween(toDateStr(overlapStart), toDateStr(overlapEnd)) + 1;
-      daysAbsentInWindow += days;
-      absentPeriods.push({
-        from: trip.departureDate,
-        to: trip.returnDate || t('stillAway'),
-        days: days,
-        overlap: days
-      });
-    }
-  });
-
-  const remaining = Math.max(0, 180 - daysAbsentInWindow);
-  const status = daysAbsentInWindow >= 180 ? 'red' : daysAbsentInWindow >= 120 ? 'amber' : 'green';
-
   const grantDate = parseDate(member.bnoGrantDate);
   grantDate.setHours(0,0,0,0);
-  let totalAbsent = 0;
-  const presentTrips = [];
 
-  memberTrips.forEach(trip => {
-    const r = tripAbsenceRange(trip, today);
-    if (!r.valid) return;
-    if (r.end >= grantDate) {
-      const effStart = new Date(Math.max(r.start.getTime(), grantDate.getTime()));
-      const days = daysBetween(toDateStr(effStart), toDateStr(r.end)) + 1;
-      totalAbsent += days;
-      presentTrips.push({
-        from: trip.departureDate,
-        to: trip.returnDate || t('stillAway'),
-        days: days
-      });
-    }
-  });
+  // Ongoing trips (no return date yet) run to evalDate, so the planner presumes
+  // the traveller is still abroad. The historical scans below never read an
+  // index past today, so this one timeline serves both.
+  const tl = buildAbsenceTimeline(grantDate, memberTrips, evalDate, evalDate);
+  const evalIdx = daysBetween(grantDate, evalDate);
+  const todayIdx = daysBetween(grantDate, today);
+
+  const daysAbsentInWindow = absentInRange(tl, evalIdx - (WINDOW_DAYS - 1), evalIdx);
+  const remaining = Math.max(0, MAX_ABSENCE - daysAbsentInWindow);
+  const status = daysAbsentInWindow >= MAX_ABSENCE ? 'red'
+    : daysAbsentInWindow >= 120 ? 'amber'
+    : 'green';
+
+  const totalAbsent = absentInRange(tl, 0, todayIdx);
 
   const ilrEarliest = addYears(member.bnoGrantDate, 5);
   const ilrEarliestStr = toDateStr(ilrEarliest);
 
+  // Worst 12-month absence across EVERY rolling window ending between the grant
+  // date and today — not a handful of fixed blocks. The old version sampled ten
+  // 180-day periods on a 182-day stride, which left two uncovered days between
+  // each pair and, worse, could not see a breach straddling a boundary: 175
+  // absent days ending at a block edge plus 175 starting right after is 350
+  // days inside one year, and it scored 175. Windows are clipped at the grant
+  // date, so a partial first year is evaluated too.
   let worstWindow = 0;
-  for (let i = 0; i < 10; i++) {
-    const periodStart = addDays(member.bnoGrantDate, i * 182);
-    const periodEnd = addDays(periodStart, 179);
-    if (periodStart > today) break;
-
-    let windowAbsences = 0;
-    memberTrips.forEach(trip => {
-      const r = tripAbsenceRange(trip, today);
-      if (!r.valid) return;
-      const ws = new Date(Math.max(r.start.getTime(), periodStart.getTime()));
-      const we = new Date(Math.min(r.end.getTime(), periodEnd.getTime()));
-      if (ws <= we) {
-        windowAbsences += daysBetween(toDateStr(ws), toDateStr(we)) + 1;
-      }
-    });
-    worstWindow = Math.max(worstWindow, windowAbsences);
+  for (let i = 0; i <= todayIdx; i++) {
+    const inWindow = absentInRange(tl, i - (WINDOW_DAYS - 1), i);
+    if (inWindow > worstWindow) worstWindow = inWindow;
   }
 
-  const isCompliant = worstWindow < 180;
+  // Unchanged from the previous version: this treats exactly 180 days as a
+  // breach, one day stricter than "no more than 180 days". Strict is the
+  // harmless direction, but it is worth checking against gov.uk.
+  const isCompliant = worstWindow < MAX_ABSENCE;
   const isEligible = ilrEarliest <= today && isCompliant;
   const isGettingClose = ilrEarliest <= addDays(today, 90) && isCompliant;
 
@@ -515,8 +764,6 @@ function calcRollingWindow(member, trips, referenceDate) {
     remaining,
     status,
     totalAbsent,
-    absentPeriods,
-    presentTrips,
     isCompliant,
     isEligible,
     isGettingClose,
@@ -536,13 +783,17 @@ function showTab(name) {
 // ============ RENDER ENGINE ============
 function render(tab) {
   const app = document.getElementById('app');
+  let body = '';
   switch(tab) {
-    case 'dashboard': app.innerHTML = renderDashboard(); break;
-    case 'members': app.innerHTML = renderMembers(); break;
-    case 'trips': app.innerHTML = renderTrips(); break;
-    case 'planner': app.innerHTML = renderPlanner(); break;
+    case 'dashboard': body = renderDashboard(); break;
+    case 'members': body = renderMembers(); break;
+    case 'trips': body = renderTrips(); break;
+    case 'planner': body = renderPlanner(); break;
   }
-  if (tab === 'dashboard') setTimeout(drawDashboardChart, 100);
+  // Prepended on every tab, not just the dashboard: members and the planner
+  // render numbers too, and a staleness warning that only appears on one screen
+  // is a warning the user can miss.
+  app.innerHTML = calcNotice() + rulesBanner() + body;
 }
 
 function renderDashboard() {
@@ -564,7 +815,12 @@ function renderDashboard() {
     const statusLabel = calc.status === 'green' ? t('statusGreen') : calc.status === 'amber' ? t('statusAmber') : t('statusRed');
 
     let ilrInfo = '';
-    if (calc.isEligible) {
+    // A member who has breached the 12-month limit must never be shown a
+    // countdown: with the grant date 5 years past, daysToILR is 0, and
+    // "ILR in 0 days" reads as "apply now" to someone who cannot apply at all.
+    if (!calc.isCompliant) {
+      ilrInfo = `<span class="badge badge-red">${t('ilrNotEligible')}</span>`;
+    } else if (calc.isEligible) {
       ilrInfo = `<span class="badge badge-green">${t('ilrEligible')}</span>`;
     } else if (calc.isGettingClose) {
       ilrInfo = `<span class="badge badge-amber">${t('ilrApprox')(calc.daysToILR)}</span>`;
@@ -628,7 +884,7 @@ function renderDashboard() {
     <div class="grid">${memberCards}</div>
     <div class="card" style="margin-top:16px">
       <h2>${t('chartTitle')}</h2>
-      <div class="chart-container"><canvas id="dashboardChart"></canvas></div>
+      ${renderComparison(results)}
     </div>`;
 }
 
@@ -641,7 +897,7 @@ function renderMembers() {
         <td><strong>${esc(m.name)}</strong><br><span style="font-size:12px;color:var(--text2)">${t('granted')}: ${fmt(m.bnoGrantDate)}</span></td>
         <td>${calc.daysAbsentInWindow}/180</td>
         <td><span class="badge badge-${calc.status}">${statusBadge}</span></td>
-        <td>${calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
+        <td>${!calc.isCompliant ? `<span class="badge badge-red">${t('ilrNotEligible')}</span>` : calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
         <td>
           <button class="btn btn-sm" onclick="editMember('${m.id}')">${t('btnEdit')}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">${t('btnDelete')}</button>
@@ -832,6 +1088,18 @@ document.addEventListener('click', e => {
   if (e.target.classList.contains('modal-overlay')) e.target.remove();
 });
 
+// A WebView will not navigate away from the app, so target="_blank" is inert in
+// the desktop shell. The disclaimer's link to the official UKVI guidance has to
+// work, so hand external links to the system browser instead.
+if (isDesktop) {
+  document.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a[href^="http"]');
+    if (!a) return;
+    e.preventDefault();
+    TAURI.opener.openUrl(a.href).catch(showStoreError);
+  });
+}
+
 // ============ SAVE OPERATIONS ============
 function saveTrip(editId) {
   const memberId = document.getElementById('mTripMember').value;
@@ -849,7 +1117,7 @@ function saveTrip(editId) {
     data.trips.push({ id: genId(), memberId, departureDate: departure, returnDate, purpose });
   }
 
-  saveData(data);
+  persist();
   closeModal('tripModal');
   render(getCurrentTab());
 }
@@ -857,7 +1125,7 @@ function saveTrip(editId) {
 function deleteTrip(id) {
   if (!confirm(t('confirmDelTrip'))) return;
   data.trips = data.trips.filter(tr => tr.id !== id);
-  saveData(data);
+  persist();
   render(getCurrentTab());
 }
 
@@ -876,7 +1144,7 @@ function saveMember(editId) {
     data.members.push({ id: genId(), name, bnoGrantDate: grantDate, relationship, notes });
   }
 
-  saveData(data);
+  persist();
   closeModal('memberModal');
   render(getCurrentTab());
 }
@@ -887,7 +1155,7 @@ function deleteMember(id) {
   if (!confirm(t('confirmDelMember'))) return;
   data.members = data.members.filter(m => m.id !== id);
   data.trips = data.trips.filter(tr => tr.memberId !== id);
-  saveData(data);
+  persist();
   render(getCurrentTab());
 }
 
@@ -902,7 +1170,7 @@ function calcPlanner() {
   if (!member) return;
 
   const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-  // Evaluate the rolling 180-day window at the END of the proposed trip — that's
+  // Evaluate the rolling 12-month window at the END of the proposed trip — that's
   // when its absence days are fully inside the window. Without this, a 200-day
   // future trip would falsely report "OK to travel" because today's window only
   // overlaps with 1 day of it.
@@ -945,29 +1213,85 @@ function calcPlanner() {
 }
 
 // ============ EXPORT/IMPORT ============
-function exportData() {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+// On desktop the native Save/Open dialogs run in Rust (see src-tauri/src/lib.rs)
+// and the chosen path never crosses into JavaScript, which is what allows the
+// fs capability to stay scoped to the app's own folder. In a browser this falls
+// back to the ordinary blob download and <input type="file">.
+async function saveOut(filename, contents, mime) {
+  if (isDesktop) {
+    try { await TAURI.core.invoke('export_file', { suggested: filename, contents }); }
+    catch (err) { showStoreError(err); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([contents], { type: mime }));
   const a = document.createElement('a');
-  a.href = url; a.download = `bno-tracker-${todayStr()}.json`;
+  a.href = url; a.download = filename;
   a.click(); URL.revokeObjectURL(url);
 }
 
-function importData() {
+function exportData() {
+  saveOut(`bno-tracker-${todayStr()}.json`, JSON.stringify(data, null, 2), 'application/json');
+}
+
+async function importData() {
+  if (isDesktop) {
+    let text;
+    try { text = await TAURI.core.invoke('import_file'); }
+    catch (err) { showStoreError(err); return; }
+    if (text == null) return;   // cancelled
+    applyImport(text);
+    return;
+  }
   document.getElementById('importInput').click();
+}
+
+// The old check was `if (imported.members)`, which accepted {"members": 5} and
+// wrote it straight to storage - the app then threw on every render, for good.
+// In a browser you can clear storage from devtools; inside a packaged .app a
+// non-technical user cannot, so the import gate has to be real.
+// Returns null when valid, otherwise a human-readable reason.
+function validateImport(o) {
+  const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(parseDate(v));
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return t('vNotObject');
+  if (!Array.isArray(o.members)) return t('vMembers');
+  if (!Array.isArray(o.trips)) return t('vTrips');
+  const ids = new Set();
+  for (const m of o.members) {
+    if (!m || typeof m !== 'object') return t('vMemberShape');
+    if (typeof m.id !== 'string' || !m.id) return t('vMemberId');
+    if (ids.has(m.id)) return t('vMemberDup')(m.id);
+    ids.add(m.id);
+    if (typeof m.name !== 'string') return t('vMemberName');
+    if (!isDateStr(m.bnoGrantDate)) return t('vMemberDate')(m.name || m.id);
+  }
+  for (const tr of o.trips) {
+    if (!tr || typeof tr !== 'object') return t('vTripShape');
+    if (typeof tr.id !== 'string' || !tr.id) return t('vTripId');
+    if (!ids.has(tr.memberId)) return t('vTripOrphan')(tr.memberId);
+    if (!isDateStr(tr.departureDate)) return t('vTripDate');
+    if (tr.returnDate && !isDateStr(tr.returnDate)) return t('vTripDate');
+    if (tr.returnDate && tr.returnDate < tr.departureDate) return t('vTripOrder');
+  }
+  return null;
+}
+
+function applyImport(text) {
+  let imported;
+  try { imported = JSON.parse(text); }
+  catch { alert(t('alertCantParse')); return; }
+  const problem = validateImport(imported);
+  // Reject without touching anything: existing data stays exactly as it was.
+  if (problem) { alert(t('alertInvalidFile') + '\n\n' + problem); return; }
+  data = imported;
+  persist();
+  render(getCurrentTab());
 }
 
 function handleImport(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const imported = JSON.parse(e.target.result);
-      if (imported.members) { data = imported; saveData(data); render(getCurrentTab()); }
-      else alert(t('alertInvalidFile'));
-    } catch { alert(t('alertCantParse')); }
-  };
+  reader.onload = e => applyImport(e.target.result);
   reader.readAsText(file);
   event.target.value = '';
 }
@@ -981,76 +1305,83 @@ function exportCSV() {
     const dur = tripAbsenceDays(tr, _todayMidnight());
     csv += `"${name}","${tr.departureDate}","${tr.returnDate || ''}",${dur},"${tr.purpose || ''}"\n`;
   });
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `bno-trips-${todayStr()}.csv`;
-  a.click(); URL.revokeObjectURL(url);
+  saveOut(`bno-trips-${todayStr()}.csv`, csv, 'text/csv');
 }
 
 // ============ HELPERS ============
 function genId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
-function esc(s) { if (s === undefined || s === null || s === '') return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function esc(s) {
+  if (s === undefined || s === null || s === '') return '';
+  // Escapes for BOTH text and attribute contexts. The old textContent ->
+  // innerHTML trick handled < > & but left " untouched, so a member name
+  // containing a quote escaped value="..." and injected live attributes.
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 function getMemberName(id) { const m = data.members.find(x => x.id === id); return m ? m.name : t('unknown'); }
 function getCurrentTab() {
   const active = document.querySelector('.tab.active');
   return active ? active.dataset.tab : 'dashboard';
 }
 
-// ============ CHART ============
-let dashboardChartInstance = null;
-function drawDashboardChart() {
-  const canvas = document.getElementById('dashboardChart');
-  if (!canvas) return;
-  if (dashboardChartInstance) { dashboardChartInstance.destroy(); dashboardChartInstance = null; }
-  const ctx = canvas.getContext('2d');
-  const results = data.members.map(m => ({ name: m.name, calc: calcRollingWindow(m, data.trips) }));
-
-  dashboardChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: results.map(r => r.name),
-      datasets: [
-        {
-          label: t('chartUsed'),
-          data: results.map(r => r.calc.daysAbsentInWindow),
-          backgroundColor: results.map(r => r.calc.status === 'green' ? '#0d8c44' : r.calc.status === 'amber' ? '#b45309' : '#dc2626'),
-          borderRadius: 4,
-        },
-        {
-          label: t('chartRemaining'),
-          data: results.map(r => r.calc.remaining),
-          backgroundColor: '#e2e5ea',
-          borderRadius: 4,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { stacked: true, grid: { display: false } },
-        y: { stacked: true, max: 180, beginAtZero: true, title: { display: true, text: t('chartDaysAxis') } }
-      },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: {
-          callbacks: {
-            afterBody: (items) => {
-              const r = results[items[0].dataIndex];
-              const lbl = r.calc.status === 'green' ? t('statusNormal') : r.calc.status === 'amber' ? t('statusWarning') : t('statusOver');
-              return `${t('chartStatusLabel')}: ${lbl}`;
-            }
-          }
-        }
-      }
-    }
-  });
+// ============ COMPARISON BAR ============
+// Every member's current-window absence on one scale, so a family can be read
+// against each other at a glance. Scaled to max(180, worst) rather than a fixed
+// 180: since the window became a true rolling 12 months, a member can be at 340
+// legitimately, and a fixed scale would clip exactly the bar that matters most.
+function renderComparison(results) {
+  const scaleMax = Math.max(180, ...results.map(r => r.calc.daysAbsentInWindow));
+  const capPct = (180 / scaleMax) * 100;
+  const rows = results.map(r => {
+    const c = r.calc;
+    const pct = (c.daysAbsentInWindow / scaleMax) * 100;
+    return `
+      <div class="cmp-row">
+        <div class="cmp-name" title="${esc(r.member.name)}">${esc(r.member.name)}</div>
+        <div class="cmp-track">
+          <div class="cmp-fill" style="width:${pct}%;background:var(--${c.status})"></div>
+          <div class="cmp-cap" style="left:${capPct}%"></div>
+        </div>
+        <div class="cmp-val" style="color:var(--${c.status})">${c.daysAbsentInWindow}</div>
+      </div>`;
+  }).join('');
+  return `<div class="cmp">${rows}</div><div class="cmp-legend"><i></i> ${t('chartCapLabel')}</div>`;
 }
 
 // ============ INIT ============
-applyStaticI18n();
-render('dashboard');
+function showLoadFailure(err) {
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <h2>${t('loadFailTitle')}</h2>
+      <div class="danger-box">${esc(err && err.message ? err.message : String(err))}</div>
+      <p style="font-size:13px;color:var(--text2);margin-top:8px">${esc(isDesktop ? t('loadFailBody')(Store.describe()) : t('loadFailWeb'))}</p>
+    </div>`;
+}
+
+async function boot() {
+  let loaded;
+  try {
+    loaded = await Store.load();
+  } catch (err) {
+    // Deliberately do NOT fall back to empty data. A blank app invites the user
+    // to start typing, and the first save would then overwrite the very file we
+    // just failed to read. Stop, and point at the backups instead.
+    applyStaticI18n();
+    showLoadFailure(err);
+    return;
+  }
+  data = loaded;
+  storeReady = true;
+  // Only now is it safe to let anyone touch the data. Left disabled on a load
+  // failure on purpose: if we could not read the file we do not know what is in
+  // it, so we must not offer actions that would write over it.
+  document.querySelectorAll('.header-actions button').forEach(b => { b.disabled = false; });
+  applyStaticI18n();
+  render('dashboard');
+}
+
+boot();
 </script>
 </body>
 </html>

@@ -29,9 +29,9 @@ non-obvious traps:
    of Man** or the **Republic of Ireland** count as absences from the UK for
    ILR — even though they are part of the Common Travel Area. Many BNO
    holders assume "British Isles" trips are free. They are not.
-3. **The rolling window.** It is *any* rolling 180-day window, not "180 days
+3. **The rolling window.** It is *any* rolling 12-month window, not "180 days
    per calendar year." A 100-day trip in November plus another 90-day trip in
-   January will breach it, even though neither year has 180 days alone.
+   January will breach it, even though neither calendar year has 180 days alone.
 
 This tracker encodes those rules and exposes them in the UI.
 
@@ -40,7 +40,7 @@ This tracker encodes those rules and exposes them in the UI.
 ## What it does
 
 - **Dashboard** — at-a-glance status for every family member: days absent in
-  the current rolling 180-day window, days remaining, total absent since
+  the current rolling 12-month window, days remaining, total absent since
   their BNO grant date, and ILR eligibility / countdown.
 - **Family Members** — add as many BNO holders / partners / children /
   dependants as you need; each has their own grant date and absence record.
@@ -60,21 +60,29 @@ This tracker encodes those rules and exposes them in the UI.
 
 | Rule | Where | Notes |
 |------|-------|-------|
-| 180-day rolling window | `calcRollingWindow()` | Counted at any reference date, not just today |
+| 180 days in any rolling 12 months | `calcRollingWindow()` | Counted at any reference date, not just today |
 | Midnight rule | `tripAbsenceRange()` / `tripAbsenceDays()` | Departure day counts, return day doesn't |
 | 5-year ILR qualifying period | `ilrEarliest` calc | `bnoGrantDate + 5 years` |
-| 6-month worst-window check | `worstWindow` loop | Surfaces the largest 6-month bucket since grant |
+| Worst 12-month window since grant | `worstWindow` scan | Every rolling window, day by day — fixed buckets miss a breach that straddles a boundary |
 | Crown Dependencies & Ireland count as absences | UI banner on Trips tab | Implementation-wise no different; the trap is just informational |
 
 ---
 
 ## Tech & design decisions
 
-- **Single static HTML file, no build step.** ~1000 lines of vanilla JS with
-  one CDN dependency (Chart.js). Deploys to GitHub Pages with zero CI.
-- **No backend, no analytics, no telemetry.** All data lives in the browser's
-  `localStorage`. The repo and the deployed site never see your absence
-  records.
+- **Single static HTML file, no build step, no dependencies.** ~1100 lines of
+  vanilla JS and nothing else. Chart.js used to be a CDN dependency; it was
+  201 KB — four times the whole app — to draw a bar the per-member progress
+  bars already implied, so it is gone. The page now issues **zero network
+  requests**, which is what makes the privacy claim below literally true
+  rather than nearly true.
+- **No backend, no analytics, no telemetry.** In the browser, data lives in
+  `localStorage`. In the desktop app it is a real file on your disk. The repo
+  and the deployed site never see your absence records either way.
+- **One file, two shells.** The same `index.html` runs as the web page and
+  inside the desktop app; it picks its storage backend at runtime by detecting
+  Tauri. The web build still has no build step. The desktop build has exactly
+  one: a `cp` of `index.html` into the bundle.
 - **Hosted on GitHub Pages** off the `main` branch. Pushing to main is the
   whole deploy pipeline.
 - **i18n via a translation dictionary + a `t(key)` helper.** Strings as
@@ -99,6 +107,35 @@ python3 -m http.server 8000
 
 (You can also just double-click `index.html`, but `localStorage` works more
 predictably under an `http://` origin than `file://`.)
+
+---
+
+## Desktop app (macOS)
+
+The web version stores everything in `localStorage`, which is local but not
+durable: Safari clears script-writable storage after about a week without
+interaction, and any "clear browsing data" wipes it. For a tool you open once
+a month to decide when to file for ILR, that is a real way to lose five years
+of records.
+
+The desktop build fixes that. Your data is a plain JSON file in
+`~/Library/Application Support/uk.bnotracker.app/`, it keeps one dated backup
+per day (newest 30), and it works with no network at all.
+
+**Installing:** see [docs/INSTALL.md](docs/INSTALL.md). The app is unsigned, so
+macOS will warn you the first time — the guide walks through it.
+
+**Building it yourself:**
+
+```sh
+cd desktop
+npm install
+npm run build      # release .app and .dmg under src-tauri/target/release/bundle/
+npm run dev        # dev mode, served from the python server on :8765
+```
+
+Requires the [Rust toolchain](https://rustup.rs). Windows is a later phase —
+Tauri cannot cross-compile it from macOS, so it needs CI or a Windows machine.
 
 ---
 
