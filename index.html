@@ -151,6 +151,43 @@
 const APP_VERSION = '0.1.0';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
+// ============ RULES PROVENANCE ============
+// The rules encoded here are a reading of the published UKVI guidance as of a
+// date. That date has a 90-day shelf life: past it the app says so instead of
+// carrying on rendering confident numbers at people deciding when to file for
+// ILR. This is what lets the tool degrade honestly rather than silently, and it
+// is why the tool does not need to track rule changes - it stops claiming to be
+// current on its own.
+//
+// RULES_CHECKED IS A CLAIM THAT A HUMAN READ GOV.UK ON THAT DAY.
+// Bumping it to silence the banner, without re-reading the guidance, is the one
+// edit to this file that converts an honesty feature into a lie. Empty means
+// nobody has checked, and the app says exactly that.
+const RULES_CHECKED = '2026-09-03';  // 'YYYY-MM-DD', or '' if never verified
+const RULES_SHELF_LIFE_DAYS = 90;
+
+function rulesStatus() {
+  if (!RULES_CHECKED) return { state: 'unverified', age: null };
+  const age = daysBetween(RULES_CHECKED, todayStr());
+  if (!isFinite(age)) return { state: 'unverified', age: null };
+  return { state: age >= RULES_SHELF_LIFE_DAYS ? 'stale' : 'fresh', age };
+}
+
+// Loud only when it should be. Fresh states say their piece quietly in the
+// footer; stale and unverified get a box above the numbers on every tab.
+function rulesBanner() {
+  const r = rulesStatus();
+  if (r.state === 'fresh') return '';
+  const msg = r.state === 'unverified' ? t('rulesUnverified') : t('rulesStale')(fmt(RULES_CHECKED), r.age);
+  return `<div class="warning-box">${msg}</div>`;
+}
+
+function rulesFooterLine() {
+  const r = rulesStatus();
+  if (r.state === 'unverified') return t('rulesFooterUnverified');
+  return t('rulesFooterChecked')(fmt(RULES_CHECKED)) + (r.state === 'stale' ? ' ' + t('rulesFooterStale') : '');
+}
+
 function buildLabel() {
   const stamp = BUILD_STAMP.startsWith('__') ? '' : ' · ' + BUILD_STAMP;
   return 'v' + APP_VERSION + ' · ' + (isDesktop ? t('shellDesktop') : t('shellWeb')) + stamp;
@@ -195,6 +232,11 @@ const I18N = {
     privacyNote: '所有資料只 儲存喺你部裝置嘅瀏覽器（localStorage），唔會上傳去任何伺服器。',
     sourceLink: '原始碼',
     shellDesktop: '桌面版', shellWeb: '網頁版',
+    rulesUnverified: '⚠️ <strong>呢個工具寫嘅 UKVI 規則未核對過。</strong> 信呢度任何數字之前，請先去 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">官方指引</a> 睇清楚。',
+    rulesStale: (d, n) => `⚠️ <strong>UKVI 規則最後核對日期係 ${d}，已經隔咗 ${n} 日。</strong> 規則有可能改咗。信呢度啲數字之前，請先去 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">官方指引</a> 核對返。`,
+    rulesFooterChecked: (d) => `UKVI 規則最後核對日期：${d}。`,
+    rulesFooterStale: '（已超過 90 日，可能過時。）',
+    rulesFooterUnverified: 'UKVI 規則未核對過 gov.uk。',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
@@ -289,6 +331,11 @@ const I18N = {
     privacyNote: 'All data is stored only in your browser (localStorage) — nothing is uploaded to any server.',
     sourceLink: 'Source code',
     shellDesktop: 'Desktop', shellWeb: 'Web',
+    rulesUnverified: '⚠️ <strong>The UKVI rules encoded here have not been verified.</strong> Check the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official guidance</a> before relying on any number in this tool.',
+    rulesStale: (d, n) => `⚠️ <strong>UKVI rules last checked ${d}, ${n} days ago.</strong> They may have changed since. Verify against the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official guidance</a> before relying on these numbers.`,
+    rulesFooterChecked: (d) => `UKVI rules last checked ${d}.`,
+    rulesFooterStale: '(Over 90 days ago — may be out of date.)',
+    rulesFooterUnverified: 'UKVI rules not verified against gov.uk.',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
@@ -389,6 +436,7 @@ function applyStaticI18n() {
   document.getElementById('appFooter').innerHTML = `
     <div><strong>${t('disclaimerHeading')}.</strong> ${t('disclaimerBody')}</div>
     <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a> · <span class="build-id">${esc(buildLabel())}</span></div>
+    <div style="margin-top:8px">${rulesFooterLine()}</div>
   `;
 }
 
@@ -703,12 +751,17 @@ function showTab(name) {
 // ============ RENDER ENGINE ============
 function render(tab) {
   const app = document.getElementById('app');
+  let body = '';
   switch(tab) {
-    case 'dashboard': app.innerHTML = renderDashboard(); break;
-    case 'members': app.innerHTML = renderMembers(); break;
-    case 'trips': app.innerHTML = renderTrips(); break;
-    case 'planner': app.innerHTML = renderPlanner(); break;
+    case 'dashboard': body = renderDashboard(); break;
+    case 'members': body = renderMembers(); break;
+    case 'trips': body = renderTrips(); break;
+    case 'planner': body = renderPlanner(); break;
   }
+  // Prepended on every tab, not just the dashboard: members and the planner
+  // render numbers too, and a staleness warning that only appears on one screen
+  // is a warning the user can miss.
+  app.innerHTML = rulesBanner() + body;
 }
 
 function renderDashboard() {
