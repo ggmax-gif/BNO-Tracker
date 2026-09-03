@@ -29,9 +29,9 @@ non-obvious traps:
    of Man** or the **Republic of Ireland** count as absences from the UK for
    ILR — even though they are part of the Common Travel Area. Many BNO
    holders assume "British Isles" trips are free. They are not.
-3. **The rolling window.** It is *any* rolling 180-day window, not "180 days
+3. **The rolling window.** It is *any* rolling 12-month window, not "180 days
    per calendar year." A 100-day trip in November plus another 90-day trip in
-   January will breach it, even though neither year has 180 days alone.
+   January will breach it, even though neither calendar year has 180 days alone.
 
 This tracker encodes those rules and exposes them in the UI.
 
@@ -40,7 +40,7 @@ This tracker encodes those rules and exposes them in the UI.
 ## What it does
 
 - **Dashboard** — at-a-glance status for every family member: days absent in
-  the current rolling 180-day window, days remaining, total absent since
+  the current rolling 12-month window, days remaining, total absent since
   their BNO grant date, and ILR eligibility / countdown.
 - **Family Members** — add as many BNO holders / partners / children /
   dependants as you need; each has their own grant date and absence record.
@@ -60,10 +60,10 @@ This tracker encodes those rules and exposes them in the UI.
 
 | Rule | Where | Notes |
 |------|-------|-------|
-| 180-day rolling window | `calcRollingWindow()` | Counted at any reference date, not just today |
+| 180 days in any rolling 12 months | `calcRollingWindow()` | Counted at any reference date, not just today |
 | Midnight rule | `tripAbsenceRange()` / `tripAbsenceDays()` | Departure day counts, return day doesn't |
 | 5-year ILR qualifying period | `ilrEarliest` calc | `bnoGrantDate + 5 years` |
-| 6-month worst-window check | `worstWindow` loop | Surfaces the largest 6-month bucket since grant |
+| Worst 12-month window since grant | `worstWindow` scan | Every rolling window, day by day — fixed buckets miss a breach that straddles a boundary |
 | Crown Dependencies & Ireland count as absences | UI banner on Trips tab | Implementation-wise no different; the trap is just informational |
 
 ---

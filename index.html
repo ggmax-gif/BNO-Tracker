@@ -135,9 +135,10 @@ const I18N = {
     daysInWindow: '窗口期日數', daysRemaining: '餘下日數', totalDaysAbsent: '總計離港日數',
     bnoGrantDate: 'BNO 批准日期',
     ilrEligible: '符合 ILR 資格',
+    ilrNotEligible: '不符 ILR 資格',
     ilrApprox: (n) => `ILR 大概 ${n} 日後`,
     ilrIn: (n) => `ILR 喺 ${n} 日後`,
-    worstWindowMsg: (n) => `最嚴重嘅180日周期: ${n} 日離港`,
+    worstWindowMsg: (n) => `最嚴重嘅 12 個月周期: ${n} 日離港`,
     statFamily: '家庭成員', statWithin: '喺限制以內', statNear: '接近限制', statOver: '超出限制',
     chartTitle: '目前窗口期餘下日數 (按成員)',
     colName: '姓名', colWindowDays: '窗口期日數', colStatus: '狀態', colIlrStatus: 'ILR 狀態', colActions: '操作',
@@ -146,7 +147,7 @@ const I18N = {
     eligibleBadge: '符合資格',
     approxDays: (n) => `大概 ${n} 日`,
     daysShort: (n) => `${n} 日`,
-    tipMembers: '提示: 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面嘅每 6 個月周期。',
+    tipMembers: '提示: 設定每人嘅 BNO 批准日期嚟計算 ILR 資格。追蹤器會檢查 5 年期限入面每一個滾動 12 個月窗口。',
     midnightRuleTitle: '午夜規則 (Midnight Rule)',
     midnightRuleBody: '一日只計為「離港日」，係指你喺英國時間午夜時身處英國境外。 出發日 計入離港日（午夜時人喺外面），返港日 不計（午夜前已返到英國）。所以 12月7日去、2月4日返 → 59 日離港，唔係 60 日。',
     crownDepTitle: '⚠️ 隱藏陷阱：皇家屬地 + 愛爾蘭',
@@ -161,7 +162,7 @@ const I18N = {
     daysSuffix: (n) => `${n} 日`,
     titleTrips: '出行記錄',
     plannerTitle: '假設情況出行規劃器',
-    plannerDesc: '計劃未來出行，睇吓點影響你嘅180日滾動窗口期。',
+    plannerDesc: '計劃未來出行，睇吓點影響你嘅 12 個月滾動窗口期。',
     plannerEmptyTitle: '先加入家庭成員',
     plannerEmptyMsg: '規劃器需要成員資料先可以計算可用日數。',
     lblMember: '家庭成員', lblDeparture: '離港日期', lblReturn: '返港日期',
@@ -211,9 +212,10 @@ const I18N = {
     daysInWindow: 'Days in Window', daysRemaining: 'Days Remaining', totalDaysAbsent: 'Total Days Absent',
     bnoGrantDate: 'BNO Grant Date',
     ilrEligible: 'ILR Eligible',
+    ilrNotEligible: 'Not ILR eligible',
     ilrApprox: (n) => `ILR in ~${n} days`,
     ilrIn: (n) => `ILR in ${n} days`,
-    worstWindowMsg: (n) => `Worst 180-day window: ${n} days absent`,
+    worstWindowMsg: (n) => `Worst 12-month window: ${n} days absent`,
     statFamily: 'Family Members', statWithin: 'Within Limit', statNear: 'Approaching Limit', statOver: 'Exceeded Limit',
     chartTitle: 'Current Window Days (by Member)',
     colName: 'Name', colWindowDays: 'Window Days', colStatus: 'Status', colIlrStatus: 'ILR Status', colActions: 'Actions',
@@ -222,7 +224,7 @@ const I18N = {
     eligibleBadge: 'Eligible',
     approxDays: (n) => `~${n} days`,
     daysShort: (n) => `${n} days`,
-    tipMembers: 'Tip: Set each person’s BNO grant date to calculate ILR eligibility. The tracker checks every 6-month period within the 5-year qualifying timeframe.',
+    tipMembers: 'Tip: Set each person’s BNO grant date to calculate ILR eligibility. The tracker checks every rolling 12-month window within the 5-year qualifying period.',
     midnightRuleTitle: 'The midnight rule',
     midnightRuleBody: 'A day only counts as "absent" if you are outside the UK at midnight (UK time). The day of departure DOES count (you are abroad at midnight); the day of return does NOT (you are back in the UK by midnight). So a 7 Dec departure and 4 Feb return = 59 absent days, not 60.',
     crownDepTitle: '⚠️ Hidden trap: Crown Dependencies + Ireland',
@@ -237,7 +239,7 @@ const I18N = {
     daysSuffix: (n) => `${n} days`,
     titleTrips: 'Trip Records',
     plannerTitle: 'What-If Trip Planner',
-    plannerDesc: 'Plan a future trip and see how it affects your rolling 180-day window.',
+    plannerDesc: 'Plan a future trip and see how it affects your rolling 12-month window.',
     plannerEmptyTitle: 'Add a family member first',
     plannerEmptyMsg: 'The planner needs member data before it can calculate available days.',
     lblMember: 'Family Member', lblDeparture: 'Departure Date', lblReturn: 'Return Date',
@@ -420,11 +422,60 @@ function tripAbsenceDays(trip, evalDate) {
   return daysBetween(toDateStr(r.start), toDateStr(r.end)) + 1;
 }
 
-// `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling 180-day
-// window. Defaults to today. The What-If Planner passes the proposed trip's
-// RETURN date so future trips are evaluated at trip end — this is the only
-// point at which a long future trip's absence days are fully inside the rolling
-// window. ILR eligibility (isEligible / daysToILR) always uses today.
+// ============ ABSENCE TIMELINE ============
+// The rule is "no more than 180 days outside the UK in ANY rolling 12-month
+// period", so every window evaluated here is 365 days long and the cap inside
+// it is 180. Counting over a 180-day window instead — which this file used to
+// do — makes the cap structurally unreachable, because a 180-day window can
+// hold at most 180 absent days. Two 170-day trips seven months apart are 340
+// days in one year, a plain breach, and the old code scored them 170 and
+// passed the applicant as ILR-eligible.
+const WINDOW_DAYS = 365;   // "any 12-month period"
+const MAX_ABSENCE = 180;   // days permitted inside it
+
+// One day-by-day absence timeline per member, indexed from the BNO grant date,
+// with a prefix sum so any window is an O(1) subtraction. It is a day SET
+// rather than a sum of per-trip lengths for two reasons: overlapping trip
+// records (a realistic slip when a family logs the same journey twice) count
+// each day once instead of twice, and the rolling scan below needs a few
+// thousand window queries, which per-trip arithmetic would make quadratic.
+function buildAbsenceTimeline(grantDate, memberTrips, horizon, ongoingEnd) {
+  const span = daysBetween(grantDate, horizon);
+  // Missing or unparseable grant date, or a grant date after the horizon:
+  // return an empty timeline so every query is 0 rather than throwing.
+  if (!isFinite(span) || span < 0) return { prefix: new Int32Array(1), n: 0 };
+  const n = span + 1;
+  const flags = new Uint8Array(n);
+  memberTrips.forEach(trip => {
+    const r = tripAbsenceRange(trip, ongoingEnd);
+    if (!r.valid) return;
+    // A trip already under way when the visa was granted is clipped at index 0.
+    const from = Math.max(0, daysBetween(grantDate, r.start));
+    const to = Math.min(n - 1, daysBetween(grantDate, r.end));
+    for (let i = from; i <= to; i++) flags[i] = 1;
+  });
+  const prefix = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + flags[i];
+  return { prefix, n };
+}
+
+// Absent days in [from, to], both day-indices counted from the grant date. The
+// range is clipped to the timeline, so a window reaching back past the grant
+// date counts only the days actually spent on the visa.
+function absentInRange(tl, from, to) {
+  if (tl.n === 0) return 0;
+  const a = Math.max(0, from);
+  const b = Math.min(tl.n - 1, to);
+  return a > b ? 0 : tl.prefix[b + 1] - tl.prefix[a];
+}
+
+// `referenceDate` (optional, YYYY-MM-DD) controls the END of the rolling
+// 12-month window. Defaults to today. The What-If Planner passes the proposed
+// trip's RETURN date so future trips are evaluated at trip end — this is the
+// only point at which a long future trip's absence days are fully inside the
+// window. ILR eligibility (isEligible / daysToILR / worstWindow) always uses
+// today, so a merely planned trip never retroactively changes whether the
+// applicant has been compliant so far.
 function calcRollingWindow(member, trips, referenceDate) {
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -437,74 +488,44 @@ function calcRollingWindow(member, trips, referenceDate) {
   const memberTrips = trips.filter(tr => tr.memberId === member.id)
     .sort((a,b) => parseDate(a.departureDate) - parseDate(b.departureDate));
 
-  const windowStart = addDays(evalDate, -179);
-
-  let daysAbsentInWindow = 0;
-  let absentPeriods = [];
-
-  memberTrips.forEach(trip => {
-    const r = tripAbsenceRange(trip, evalDate);
-    if (!r.valid) return;
-    const overlapStart = new Date(Math.max(r.start.getTime(), windowStart.getTime()));
-    const overlapEnd = new Date(Math.min(r.end.getTime(), evalDate.getTime()));
-    if (overlapStart <= overlapEnd) {
-      const days = daysBetween(toDateStr(overlapStart), toDateStr(overlapEnd)) + 1;
-      daysAbsentInWindow += days;
-      absentPeriods.push({
-        from: trip.departureDate,
-        to: trip.returnDate || t('stillAway'),
-        days: days,
-        overlap: days
-      });
-    }
-  });
-
-  const remaining = Math.max(0, 180 - daysAbsentInWindow);
-  const status = daysAbsentInWindow >= 180 ? 'red' : daysAbsentInWindow >= 120 ? 'amber' : 'green';
-
   const grantDate = parseDate(member.bnoGrantDate);
   grantDate.setHours(0,0,0,0);
-  let totalAbsent = 0;
-  const presentTrips = [];
 
-  memberTrips.forEach(trip => {
-    const r = tripAbsenceRange(trip, today);
-    if (!r.valid) return;
-    if (r.end >= grantDate) {
-      const effStart = new Date(Math.max(r.start.getTime(), grantDate.getTime()));
-      const days = daysBetween(toDateStr(effStart), toDateStr(r.end)) + 1;
-      totalAbsent += days;
-      presentTrips.push({
-        from: trip.departureDate,
-        to: trip.returnDate || t('stillAway'),
-        days: days
-      });
-    }
-  });
+  // Ongoing trips (no return date yet) run to evalDate, so the planner presumes
+  // the traveller is still abroad. The historical scans below never read an
+  // index past today, so this one timeline serves both.
+  const tl = buildAbsenceTimeline(grantDate, memberTrips, evalDate, evalDate);
+  const evalIdx = daysBetween(grantDate, evalDate);
+  const todayIdx = daysBetween(grantDate, today);
+
+  const daysAbsentInWindow = absentInRange(tl, evalIdx - (WINDOW_DAYS - 1), evalIdx);
+  const remaining = Math.max(0, MAX_ABSENCE - daysAbsentInWindow);
+  const status = daysAbsentInWindow >= MAX_ABSENCE ? 'red'
+    : daysAbsentInWindow >= 120 ? 'amber'
+    : 'green';
+
+  const totalAbsent = absentInRange(tl, 0, todayIdx);
 
   const ilrEarliest = addYears(member.bnoGrantDate, 5);
   const ilrEarliestStr = toDateStr(ilrEarliest);
 
+  // Worst 12-month absence across EVERY rolling window ending between the grant
+  // date and today — not a handful of fixed blocks. The old version sampled ten
+  // 180-day periods on a 182-day stride, which left two uncovered days between
+  // each pair and, worse, could not see a breach straddling a boundary: 175
+  // absent days ending at a block edge plus 175 starting right after is 350
+  // days inside one year, and it scored 175. Windows are clipped at the grant
+  // date, so a partial first year is evaluated too.
   let worstWindow = 0;
-  for (let i = 0; i < 10; i++) {
-    const periodStart = addDays(member.bnoGrantDate, i * 182);
-    const periodEnd = addDays(periodStart, 179);
-    if (periodStart > today) break;
-
-    let windowAbsences = 0;
-    memberTrips.forEach(trip => {
-      const r = tripAbsenceRange(trip, today);
-      if (!r.valid) return;
-      const ws = new Date(Math.max(r.start.getTime(), periodStart.getTime()));
-      const we = new Date(Math.min(r.end.getTime(), periodEnd.getTime()));
-      if (ws <= we) {
-        windowAbsences += daysBetween(toDateStr(ws), toDateStr(we)) + 1;
-      }
-    });
-    worstWindow = Math.max(worstWindow, windowAbsences);
+  for (let i = 0; i <= todayIdx; i++) {
+    const inWindow = absentInRange(tl, i - (WINDOW_DAYS - 1), i);
+    if (inWindow > worstWindow) worstWindow = inWindow;
   }
 
-  const isCompliant = worstWindow < 180;
+  // Unchanged from the previous version: this treats exactly 180 days as a
+  // breach, one day stricter than "no more than 180 days". Strict is the
+  // harmless direction, but it is worth checking against gov.uk.
+  const isCompliant = worstWindow < MAX_ABSENCE;
   const isEligible = ilrEarliest <= today && isCompliant;
   const isGettingClose = ilrEarliest <= addDays(today, 90) && isCompliant;
 
@@ -515,8 +536,6 @@ function calcRollingWindow(member, trips, referenceDate) {
     remaining,
     status,
     totalAbsent,
-    absentPeriods,
-    presentTrips,
     isCompliant,
     isEligible,
     isGettingClose,
@@ -564,7 +583,12 @@ function renderDashboard() {
     const statusLabel = calc.status === 'green' ? t('statusGreen') : calc.status === 'amber' ? t('statusAmber') : t('statusRed');
 
     let ilrInfo = '';
-    if (calc.isEligible) {
+    // A member who has breached the 12-month limit must never be shown a
+    // countdown: with the grant date 5 years past, daysToILR is 0, and
+    // "ILR in 0 days" reads as "apply now" to someone who cannot apply at all.
+    if (!calc.isCompliant) {
+      ilrInfo = `<span class="badge badge-red">${t('ilrNotEligible')}</span>`;
+    } else if (calc.isEligible) {
       ilrInfo = `<span class="badge badge-green">${t('ilrEligible')}</span>`;
     } else if (calc.isGettingClose) {
       ilrInfo = `<span class="badge badge-amber">${t('ilrApprox')(calc.daysToILR)}</span>`;
@@ -641,7 +665,7 @@ function renderMembers() {
         <td><strong>${esc(m.name)}</strong><br><span style="font-size:12px;color:var(--text2)">${t('granted')}: ${fmt(m.bnoGrantDate)}</span></td>
         <td>${calc.daysAbsentInWindow}/180</td>
         <td><span class="badge badge-${calc.status}">${statusBadge}</span></td>
-        <td>${calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
+        <td>${!calc.isCompliant ? `<span class="badge badge-red">${t('ilrNotEligible')}</span>` : calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
         <td>
           <button class="btn btn-sm" onclick="editMember('${m.id}')">${t('btnEdit')}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">${t('btnDelete')}</button>
@@ -902,7 +926,7 @@ function calcPlanner() {
   if (!member) return;
 
   const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-  // Evaluate the rolling 180-day window at the END of the proposed trip — that's
+  // Evaluate the rolling 12-month window at the END of the proposed trip — that's
   // when its absence days are fully inside the window. Without this, a 200-day
   // future trip would falsely report "OK to travel" because today's window only
   // overlaps with 1 day of it.
@@ -1030,7 +1054,9 @@ function drawDashboardChart() {
       maintainAspectRatio: false,
       scales: {
         x: { stacked: true, grid: { display: false } },
-        y: { stacked: true, max: 180, beginAtZero: true, title: { display: true, text: t('chartDaysAxis') } }
+        // The 180 cap is the floor of the axis, not the ceiling: a member over
+        // the limit must render past it rather than being silently clipped.
+        y: { stacked: true, max: Math.max(180, ...results.map(r => r.calc.daysAbsentInWindow)), beginAtZero: true, title: { display: true, text: t('chartDaysAxis') } }
       },
       plugins: {
         legend: { position: 'top' },
