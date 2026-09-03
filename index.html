@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BNO 身份狀態追蹤器</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f7f8fa;
@@ -78,10 +77,29 @@
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text2); }
   .empty-state p { margin: 8px 0; }
-  .chart-container { position: relative; height: 250px; }
+  /* Cross-member comparison bar. Replaces Chart.js: the library was 201 KB
+     (4x this whole file) purely to draw a stacked bar the per-member progress
+     bars already imply, and it was the only thing this app fetched over the
+     network. */
+  .cmp { display: flex; flex-direction: column; gap: 10px; }
+  .cmp-row { display: grid; grid-template-columns: minmax(70px, 140px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+  .cmp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+  .cmp-track { position: relative; height: 20px; background: var(--border); border-radius: 4px; }
+  .cmp-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  /* The 180 cap is a marker inside the track, not the end of it - a member
+     over the limit must render past the line rather than pinning at it. */
+  .cmp-cap { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); opacity: .5; }
+  .cmp-val { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 3.2em; text-align: right; }
+  .cmp-legend { margin-top: 12px; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+  .cmp-legend i { display: inline-block; width: 2px; height: 12px; background: var(--text); opacity: .5; }
   .info-box { background: var(--accent2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--accent); margin-bottom: 16px; }
   .warning-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--amber); margin-bottom: 16px; }
   .danger-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); margin-bottom: 16px; }
+
+  /* A failed write must be visible. On disk this is a full volume or a
+     permissions problem, not a cache miss - silence would mean the user
+     believes a trip was recorded when it was not. */
+  .save-error { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 200; background: var(--red-bg); color: var(--red); border: 1px solid var(--red); padding: 10px 16px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); max-width: 90%; }
 
   .app-footer { max-width: 1200px; margin: 24px auto 0; padding: 16px 24px 32px; font-size: 12px; color: var(--text2); line-height: 1.6; border-top: 1px solid var(--border); }
   .app-footer strong { color: var(--text); }
@@ -115,6 +133,8 @@
 
 <footer id="appFooter" class="app-footer"></footer>
 
+<div id="saveError" class="save-error" hidden></div>
+
 <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
 <script>
@@ -140,7 +160,7 @@ const I18N = {
     ilrIn: (n) => `ILR 喺 ${n} 日後`,
     worstWindowMsg: (n) => `最嚴重嘅 12 個月周期: ${n} 日離港`,
     statFamily: '家庭成員', statWithin: '喺限制以內', statNear: '接近限制', statOver: '超出限制',
-    chartTitle: '目前窗口期餘下日數 (按成員)',
+    chartTitle: '目前窗口期離港日數 (按成員)',
     colName: '姓名', colWindowDays: '窗口期日數', colStatus: '狀態', colIlrStatus: 'ILR 狀態', colActions: '操作',
     btnEdit: '編輯', btnDelete: '刪除', btnAddMember: '+ 加入成員',
     noMembers: '尚未加入任何家庭成員', granted: '批准日期',
@@ -189,10 +209,26 @@ const I18N = {
     confirmDelTrip: '要刪除呢筆出行記錄嗎？',
     alertTwoDates: '請揀選兩個日期。',
     alertNoTrips: '冇出行記錄可以匯出。',
-    alertInvalidFile: '無效嘅文件格式。',
+    alertInvalidFile: '無效嘅文件格式，冇匯入到。',
+    vNotObject: '最外層唔係一個物件。',
+    vMembers: '搵唔到 members 陣列。',
+    vTrips: '搵唔到 trips 陣列。',
+    vMemberShape: '有成員唔係物件。',
+    vMemberId: '有成員冇 id。',
+    vMemberDup: (id) => `成員 id 重複：${id}`,
+    vMemberName: '有成員嘅 name 唔係文字。',
+    vMemberDate: (who) => `${who} 嘅 BNO 批准日期唔係 YYYY-MM-DD 格式。`,
+    vTripShape: '有出行記錄唔係物件。',
+    vTripId: '有出行記錄冇 id。',
+    vTripOrphan: (id) => `有出行記錄搵唔到對應成員：${id}`,
+    vTripDate: '有出行記錄嘅日期唔係 YYYY-MM-DD 格式。',
+    vTripOrder: '有出行記錄嘅返港日期早過離港日期。',
     alertCantParse: '無法解析檔案。',
-    chartUsed: '已用日數', chartRemaining: '餘下日數',
-    chartStatusLabel: '狀態', chartDaysAxis: '日數',
+    chartCapLabel: '直線 = 180 日上限',
+    saveFailMsg: '儲存失敗 — 你啱啱嘅改動可能未寫入。',
+    loadFailTitle: '讀唔到你嘅資料檔',
+    loadFailBody: (where) => `程式冇改動過亦都冇覆蓋過個檔。你嘅資料同每日備份喺：${where}`,
+    loadFailWeb: '程式冇改動過亦都冇覆蓋過你嘅資料。如果你之前匯出過 JSON 備份，可以匯入返嚟復原。',
     csvHeader: '成員,離港日期,返港日期,持續時間 (日),目的',
     unknown: '未知',
     locale: 'zh-HK',
@@ -266,10 +302,26 @@ const I18N = {
     confirmDelTrip: 'Delete this trip record?',
     alertTwoDates: 'Please pick both dates.',
     alertNoTrips: 'No trips to export.',
-    alertInvalidFile: 'Invalid file format.',
+    alertInvalidFile: 'Invalid file — nothing was imported.',
+    vNotObject: 'The top level is not an object.',
+    vMembers: 'No members array found.',
+    vTrips: 'No trips array found.',
+    vMemberShape: 'A member entry is not an object.',
+    vMemberId: 'A member has no id.',
+    vMemberDup: (id) => `Duplicate member id: ${id}`,
+    vMemberName: 'A member name is not text.',
+    vMemberDate: (who) => `${who} has a BNO grant date that is not YYYY-MM-DD.`,
+    vTripShape: 'A trip entry is not an object.',
+    vTripId: 'A trip has no id.',
+    vTripOrphan: (id) => `A trip refers to a member that does not exist: ${id}`,
+    vTripDate: 'A trip date is not YYYY-MM-DD.',
+    vTripOrder: 'A trip returns before it departs.',
     alertCantParse: 'Could not parse the file.',
-    chartUsed: 'Days Used', chartRemaining: 'Days Remaining',
-    chartStatusLabel: 'Status', chartDaysAxis: 'Days',
+    chartCapLabel: 'Line marks the 180-day limit',
+    saveFailMsg: 'Save failed — your last change may not have been written.',
+    loadFailTitle: 'Could not read your data file',
+    loadFailBody: (where) => `Nothing has been changed or overwritten. Your data and daily backups are in: ${where}`,
+    loadFailWeb: 'Nothing has been changed or overwritten. If you exported a JSON backup earlier, you can import it to recover.',
     csvHeader: 'Member,Departure Date,Return Date,Duration (days),Purpose',
     unknown: 'Unknown',
     locale: 'en-GB',
@@ -321,24 +373,100 @@ function applyStaticI18n() {
 }
 
 // ============ DATA LAYER ============
+// Two shells, one file. Tauri v2 exposes its plugin APIs on window.__TAURI__
+// when `withGlobalTauri` is set, so feature-detecting it here is what lets this
+// single index.html serve both the GitHub Pages build (localStorage) and the
+// desktop build (a real file on disk) with no build step and no branching
+// anywhere else in the app.
 const STORAGE_KEY = 'bno-tracker-data';
+const DATA_FILE = 'bno-tracker.json';
+const BACKUP_DIR = 'backups';
+const BACKUP_KEEP = 30;
+
+const TAURI = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
+const isDesktop = !!TAURI;
 
 function getDefaultData() {
   return { familyName: 'Family', members: [], trips: [] };
 }
 
-function loadData() {
-  try {
+const WebStore = {
+  async load() {
     const raw = localStorage.getItem(STORAGE_KEY);
+    // A missing key is a first run. A corrupt one is NOT: let it throw so boot()
+    // can stop, rather than silently handing back an empty family.
     return raw ? JSON.parse(raw) : getDefaultData();
-  } catch { return getDefaultData(); }
+  },
+  async save(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); },
+  describe() { return 'localStorage'; }
+};
+
+const DesktopStore = {
+  _dir: null,
+  async _paths() {
+    if (!this._dir) {
+      this._dir = await TAURI.path.appDataDir();
+      await TAURI.fs.mkdir(this._dir, { recursive: true });
+      await TAURI.fs.mkdir(await TAURI.path.join(this._dir, BACKUP_DIR), { recursive: true });
+    }
+    return {
+      file: await TAURI.path.join(this._dir, DATA_FILE),
+      tmp: await TAURI.path.join(this._dir, DATA_FILE + '.tmp'),
+      backups: await TAURI.path.join(this._dir, BACKUP_DIR),
+    };
+  },
+  async load() {
+    const p = await this._paths();
+    if (!(await TAURI.fs.exists(p.file))) return getDefaultData();
+    return JSON.parse(await TAURI.fs.readTextFile(p.file));
+  },
+  async save(d) {
+    const p = await this._paths();
+    await this._backup(p);
+    // Atomic write: a crash between these two lines leaves the previous file
+    // intact. Writing in place would truncate the only copy of a family's
+    // records, which on desktop is the whole dataset rather than a cache.
+    await TAURI.fs.writeTextFile(p.tmp, JSON.stringify(d, null, 2));
+    await TAURI.fs.rename(p.tmp, p.file);
+  },
+  // One snapshot per calendar day, newest BACKUP_KEEP retained. In a browser a
+  // wedged dataset can be cleared from devtools; inside a packaged .app a
+  // non-technical user has no such escape hatch, so keep them one.
+  async _backup(p) {
+    if (!(await TAURI.fs.exists(p.file))) return;
+    const dest = await TAURI.path.join(p.backups, todayStr() + '.json');
+    if (await TAURI.fs.exists(dest)) return;
+    await TAURI.fs.copyFile(p.file, dest);
+    const names = (await TAURI.fs.readDir(p.backups))
+      .filter(e => e.isFile && /^\d{4}-\d{2}-\d{2}\.json$/.test(e.name))
+      .map(e => e.name).sort();
+    for (const n of names.slice(0, Math.max(0, names.length - BACKUP_KEEP))) {
+      await TAURI.fs.remove(await TAURI.path.join(p.backups, n));
+    }
+  },
+  describe() { return this._dir || 'the application data folder'; }
+};
+
+const Store = isDesktop ? DesktopStore : WebStore;
+
+let data = getDefaultData();
+let storeReady = false;
+
+// Never write before the first read has finished. Without this guard a click
+// during a slow load persists an empty dashboard over a real data file - the
+// one bug in this refactor that destroys data rather than merely annoying.
+function persist() {
+  if (!storeReady) return;
+  Store.save(data)
+    .then(() => { document.getElementById('saveError').hidden = true; })
+    .catch(showStoreError);
 }
 
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function showStoreError(err) {
+  const el = document.getElementById('saveError');
+  el.textContent = t('saveFailMsg') + ' ' + (err && err.message ? err.message : String(err));
+  el.hidden = false;
 }
-
-let data = loadData();
 
 // ============ DATE UTILITIES ============
 // IMPORTANT: <input type="date"> values are YYYY-MM-DD strings. `new Date("YYYY-MM-DD")`
@@ -561,7 +689,6 @@ function render(tab) {
     case 'trips': app.innerHTML = renderTrips(); break;
     case 'planner': app.innerHTML = renderPlanner(); break;
   }
-  if (tab === 'dashboard') setTimeout(drawDashboardChart, 100);
 }
 
 function renderDashboard() {
@@ -652,7 +779,7 @@ function renderDashboard() {
     <div class="grid">${memberCards}</div>
     <div class="card" style="margin-top:16px">
       <h2>${t('chartTitle')}</h2>
-      <div class="chart-container"><canvas id="dashboardChart"></canvas></div>
+      ${renderComparison(results)}
     </div>`;
 }
 
@@ -873,7 +1000,7 @@ function saveTrip(editId) {
     data.trips.push({ id: genId(), memberId, departureDate: departure, returnDate, purpose });
   }
 
-  saveData(data);
+  persist();
   closeModal('tripModal');
   render(getCurrentTab());
 }
@@ -881,7 +1008,7 @@ function saveTrip(editId) {
 function deleteTrip(id) {
   if (!confirm(t('confirmDelTrip'))) return;
   data.trips = data.trips.filter(tr => tr.id !== id);
-  saveData(data);
+  persist();
   render(getCurrentTab());
 }
 
@@ -900,7 +1027,7 @@ function saveMember(editId) {
     data.members.push({ id: genId(), name, bnoGrantDate: grantDate, relationship, notes });
   }
 
-  saveData(data);
+  persist();
   closeModal('memberModal');
   render(getCurrentTab());
 }
@@ -911,7 +1038,7 @@ function deleteMember(id) {
   if (!confirm(t('confirmDelMember'))) return;
   data.members = data.members.filter(m => m.id !== id);
   data.trips = data.trips.filter(tr => tr.memberId !== id);
-  saveData(data);
+  persist();
   render(getCurrentTab());
 }
 
@@ -981,16 +1108,50 @@ function importData() {
   document.getElementById('importInput').click();
 }
 
+// The old check was `if (imported.members)`, which accepted {"members": 5} and
+// wrote it straight to storage - the app then threw on every render, for good.
+// In a browser you can clear storage from devtools; inside a packaged .app a
+// non-technical user cannot, so the import gate has to be real.
+// Returns null when valid, otherwise a human-readable reason.
+function validateImport(o) {
+  const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(parseDate(v));
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return t('vNotObject');
+  if (!Array.isArray(o.members)) return t('vMembers');
+  if (!Array.isArray(o.trips)) return t('vTrips');
+  const ids = new Set();
+  for (const m of o.members) {
+    if (!m || typeof m !== 'object') return t('vMemberShape');
+    if (typeof m.id !== 'string' || !m.id) return t('vMemberId');
+    if (ids.has(m.id)) return t('vMemberDup')(m.id);
+    ids.add(m.id);
+    if (typeof m.name !== 'string') return t('vMemberName');
+    if (!isDateStr(m.bnoGrantDate)) return t('vMemberDate')(m.name || m.id);
+  }
+  for (const tr of o.trips) {
+    if (!tr || typeof tr !== 'object') return t('vTripShape');
+    if (typeof tr.id !== 'string' || !tr.id) return t('vTripId');
+    if (!ids.has(tr.memberId)) return t('vTripOrphan')(tr.memberId);
+    if (!isDateStr(tr.departureDate)) return t('vTripDate');
+    if (tr.returnDate && !isDateStr(tr.returnDate)) return t('vTripDate');
+    if (tr.returnDate && tr.returnDate < tr.departureDate) return t('vTripOrder');
+  }
+  return null;
+}
+
 function handleImport(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      const imported = JSON.parse(e.target.result);
-      if (imported.members) { data = imported; saveData(data); render(getCurrentTab()); }
-      else alert(t('alertInvalidFile'));
-    } catch { alert(t('alertCantParse')); }
+    let imported;
+    try { imported = JSON.parse(e.target.result); }
+    catch { alert(t('alertCantParse')); return; }
+    const problem = validateImport(imported);
+    // Reject without touching anything: existing data stays exactly as it was.
+    if (problem) { alert(t('alertInvalidFile') + '\n\n' + problem); return; }
+    data = imported;
+    persist();
+    render(getCurrentTab());
   };
   reader.readAsText(file);
   event.target.value = '';
@@ -1014,69 +1175,74 @@ function exportCSV() {
 
 // ============ HELPERS ============
 function genId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
-function esc(s) { if (s === undefined || s === null || s === '') return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function esc(s) {
+  if (s === undefined || s === null || s === '') return '';
+  // Escapes for BOTH text and attribute contexts. The old textContent ->
+  // innerHTML trick handled < > & but left " untouched, so a member name
+  // containing a quote escaped value="..." and injected live attributes.
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 function getMemberName(id) { const m = data.members.find(x => x.id === id); return m ? m.name : t('unknown'); }
 function getCurrentTab() {
   const active = document.querySelector('.tab.active');
   return active ? active.dataset.tab : 'dashboard';
 }
 
-// ============ CHART ============
-let dashboardChartInstance = null;
-function drawDashboardChart() {
-  const canvas = document.getElementById('dashboardChart');
-  if (!canvas) return;
-  if (dashboardChartInstance) { dashboardChartInstance.destroy(); dashboardChartInstance = null; }
-  const ctx = canvas.getContext('2d');
-  const results = data.members.map(m => ({ name: m.name, calc: calcRollingWindow(m, data.trips) }));
-
-  dashboardChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: results.map(r => r.name),
-      datasets: [
-        {
-          label: t('chartUsed'),
-          data: results.map(r => r.calc.daysAbsentInWindow),
-          backgroundColor: results.map(r => r.calc.status === 'green' ? '#0d8c44' : r.calc.status === 'amber' ? '#b45309' : '#dc2626'),
-          borderRadius: 4,
-        },
-        {
-          label: t('chartRemaining'),
-          data: results.map(r => r.calc.remaining),
-          backgroundColor: '#e2e5ea',
-          borderRadius: 4,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { stacked: true, grid: { display: false } },
-        // The 180 cap is the floor of the axis, not the ceiling: a member over
-        // the limit must render past it rather than being silently clipped.
-        y: { stacked: true, max: Math.max(180, ...results.map(r => r.calc.daysAbsentInWindow)), beginAtZero: true, title: { display: true, text: t('chartDaysAxis') } }
-      },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: {
-          callbacks: {
-            afterBody: (items) => {
-              const r = results[items[0].dataIndex];
-              const lbl = r.calc.status === 'green' ? t('statusNormal') : r.calc.status === 'amber' ? t('statusWarning') : t('statusOver');
-              return `${t('chartStatusLabel')}: ${lbl}`;
-            }
-          }
-        }
-      }
-    }
-  });
+// ============ COMPARISON BAR ============
+// Every member's current-window absence on one scale, so a family can be read
+// against each other at a glance. Scaled to max(180, worst) rather than a fixed
+// 180: since the window became a true rolling 12 months, a member can be at 340
+// legitimately, and a fixed scale would clip exactly the bar that matters most.
+function renderComparison(results) {
+  const scaleMax = Math.max(180, ...results.map(r => r.calc.daysAbsentInWindow));
+  const capPct = (180 / scaleMax) * 100;
+  const rows = results.map(r => {
+    const c = r.calc;
+    const pct = (c.daysAbsentInWindow / scaleMax) * 100;
+    return `
+      <div class="cmp-row">
+        <div class="cmp-name" title="${esc(r.member.name)}">${esc(r.member.name)}</div>
+        <div class="cmp-track">
+          <div class="cmp-fill" style="width:${pct}%;background:var(--${c.status})"></div>
+          <div class="cmp-cap" style="left:${capPct}%"></div>
+        </div>
+        <div class="cmp-val" style="color:var(--${c.status})">${c.daysAbsentInWindow}</div>
+      </div>`;
+  }).join('');
+  return `<div class="cmp">${rows}</div><div class="cmp-legend"><i></i> ${t('chartCapLabel')}</div>`;
 }
 
 // ============ INIT ============
-applyStaticI18n();
-render('dashboard');
+function showLoadFailure(err) {
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <h2>${t('loadFailTitle')}</h2>
+      <div class="danger-box">${esc(err && err.message ? err.message : String(err))}</div>
+      <p style="font-size:13px;color:var(--text2);margin-top:8px">${esc(isDesktop ? t('loadFailBody')(Store.describe()) : t('loadFailWeb'))}</p>
+    </div>`;
+}
+
+async function boot() {
+  let loaded;
+  try {
+    loaded = await Store.load();
+  } catch (err) {
+    // Deliberately do NOT fall back to empty data. A blank app invites the user
+    // to start typing, and the first save would then overwrite the very file we
+    // just failed to read. Stop, and point at the backups instead.
+    applyStaticI18n();
+    showLoadFailure(err);
+    return;
+  }
+  data = loaded;
+  storeReady = true;
+  applyStaticI18n();
+  render('dashboard');
+}
+
+boot();
 </script>
 </body>
 </html>
