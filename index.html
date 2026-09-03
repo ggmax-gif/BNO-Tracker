@@ -370,6 +370,17 @@ function addDays(d, n) {
   const r = parseDate(d); r.setDate(r.getDate() + n); return r;
 }
 
+// Calendar anniversary, NOT n*365 days. Five years is 1,826 or 1,827 days
+// depending on how many leap days fall in the window, so day arithmetic lands
+// 1-2 days EARLY — and an ILR application filed early is refused with the fee
+// kept. A 29 February grant date has no anniversary in a common year; JS
+// normalises it to 1 March, which is the direction we want: late is harmless,
+// early is not.
+function addYears(d, n) {
+  const r = parseDate(d);
+  return new Date(r.getFullYear() + n, r.getMonth(), r.getDate());
+}
+
 function fmt(d) {
   if (!d) return '';
   const dt = parseDate(d);
@@ -471,7 +482,7 @@ function calcRollingWindow(member, trips, referenceDate) {
     }
   });
 
-  const ilrEarliest = addDays(member.bnoGrantDate, 5 * 365);
+  const ilrEarliest = addYears(member.bnoGrantDate, 5);
   const ilrEarliestStr = toDateStr(ilrEarliest);
 
   let worstWindow = 0;
