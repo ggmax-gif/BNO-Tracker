@@ -59,6 +59,7 @@
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .btn-danger { color: var(--red); }
   .btn-danger:hover { background: var(--red-bg); }
+  .btn:disabled, .lang-toggle button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   .form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
   .form-group { display: flex; flex-direction: column; gap: 3px; }
   .form-group label { font-size: 12px; color: var(--text2); font-weight: 500; }
@@ -118,12 +119,12 @@
   </div>
   <div class="header-actions">
     <div class="lang-toggle" role="group" aria-label="Language">
-      <button id="langZh" onclick="setLang('zh')">中文</button>
-      <button id="langEn" onclick="setLang('en')">English</button>
+      <button id="langZh" onclick="setLang('zh')" disabled>中文</button>
+      <button id="langEn" onclick="setLang('en')" disabled>English</button>
     </div>
-    <button class="btn" id="btnExportJson" onclick="exportData()"></button>
-    <button class="btn" id="btnImportJson" onclick="importData()"></button>
-    <button class="btn" id="btnExportCsv" onclick="exportCSV()"></button>
+    <button class="btn" id="btnExportJson" onclick="exportData()" disabled></button>
+    <button class="btn" id="btnImportJson" onclick="importData()" disabled></button>
+    <button class="btn" id="btnExportCsv" onclick="exportCSV()" disabled></button>
   </div>
 </div>
 
@@ -983,6 +984,18 @@ document.addEventListener('click', e => {
   if (e.target.classList.contains('modal-overlay')) e.target.remove();
 });
 
+// A WebView will not navigate away from the app, so target="_blank" is inert in
+// the desktop shell. The disclaimer's link to the official UKVI guidance has to
+// work, so hand external links to the system browser instead.
+if (isDesktop) {
+  document.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a[href^="http"]');
+    if (!a) return;
+    e.preventDefault();
+    TAURI.opener.openUrl(a.href).catch(showStoreError);
+  });
+}
+
 // ============ SAVE OPERATIONS ============
 function saveTrip(editId) {
   const memberId = document.getElementById('mTripMember').value;
@@ -1096,15 +1109,35 @@ function calcPlanner() {
 }
 
 // ============ EXPORT/IMPORT ============
-function exportData() {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+// On desktop the native Save/Open dialogs run in Rust (see src-tauri/src/lib.rs)
+// and the chosen path never crosses into JavaScript, which is what allows the
+// fs capability to stay scoped to the app's own folder. In a browser this falls
+// back to the ordinary blob download and <input type="file">.
+async function saveOut(filename, contents, mime) {
+  if (isDesktop) {
+    try { await TAURI.core.invoke('export_file', { suggested: filename, contents }); }
+    catch (err) { showStoreError(err); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([contents], { type: mime }));
   const a = document.createElement('a');
-  a.href = url; a.download = `bno-tracker-${todayStr()}.json`;
+  a.href = url; a.download = filename;
   a.click(); URL.revokeObjectURL(url);
 }
 
-function importData() {
+function exportData() {
+  saveOut(`bno-tracker-${todayStr()}.json`, JSON.stringify(data, null, 2), 'application/json');
+}
+
+async function importData() {
+  if (isDesktop) {
+    let text;
+    try { text = await TAURI.core.invoke('import_file'); }
+    catch (err) { showStoreError(err); return; }
+    if (text == null) return;   // cancelled
+    applyImport(text);
+    return;
+  }
   document.getElementById('importInput').click();
 }
 
@@ -1138,21 +1171,23 @@ function validateImport(o) {
   return null;
 }
 
+function applyImport(text) {
+  let imported;
+  try { imported = JSON.parse(text); }
+  catch { alert(t('alertCantParse')); return; }
+  const problem = validateImport(imported);
+  // Reject without touching anything: existing data stays exactly as it was.
+  if (problem) { alert(t('alertInvalidFile') + '\n\n' + problem); return; }
+  data = imported;
+  persist();
+  render(getCurrentTab());
+}
+
 function handleImport(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
-    let imported;
-    try { imported = JSON.parse(e.target.result); }
-    catch { alert(t('alertCantParse')); return; }
-    const problem = validateImport(imported);
-    // Reject without touching anything: existing data stays exactly as it was.
-    if (problem) { alert(t('alertInvalidFile') + '\n\n' + problem); return; }
-    data = imported;
-    persist();
-    render(getCurrentTab());
-  };
+  reader.onload = e => applyImport(e.target.result);
   reader.readAsText(file);
   event.target.value = '';
 }
@@ -1166,11 +1201,7 @@ function exportCSV() {
     const dur = tripAbsenceDays(tr, _todayMidnight());
     csv += `"${name}","${tr.departureDate}","${tr.returnDate || ''}",${dur},"${tr.purpose || ''}"\n`;
   });
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `bno-trips-${todayStr()}.csv`;
-  a.click(); URL.revokeObjectURL(url);
+  saveOut(`bno-trips-${todayStr()}.csv`, csv, 'text/csv');
 }
 
 // ============ HELPERS ============
@@ -1238,6 +1269,10 @@ async function boot() {
   }
   data = loaded;
   storeReady = true;
+  // Only now is it safe to let anyone touch the data. Left disabled on a load
+  // failure on purpose: if we could not read the file we do not know what is in
+  // it, so we must not offer actions that would write over it.
+  document.querySelectorAll('.header-actions button').forEach(b => { b.disabled = false; });
   applyStaticI18n();
   render('dashboard');
 }

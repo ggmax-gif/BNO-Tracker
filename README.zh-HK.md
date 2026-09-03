@@ -64,10 +64,16 @@
 
 ## 技術同設計上嘅選擇
 
-- **單一 HTML 檔，冇 build step。** 大概 1000 行 vanilla JS，唯一外部依賴
-  係 Chart.js（CDN）。GitHub Pages 直接 serve，唔需要任何 CI。
-- **冇後端、冇分析、冇追蹤。** 所有數據只儲存喺你部裝置嘅瀏覽器
-  （`localStorage`）。GitHub repo 同部署嘅網站 永遠睇唔到你嘅出行記錄。
+- **單一 HTML 檔，冇 build step，零依賴。** 大概 1100 行 vanilla JS，冇第二
+  樣嘢。以前用 Chart.js（CDN），但係佢有 201 KB — 成個 app 嘅四倍 — 淨係
+  為咗畫返個同成員進度條差唔多嘅圖，所以拆咗佢。而家整個頁面 一個網絡請求
+  都冇，下面講嘅私隱承諾先至係字面上真確，唔係「差唔多真」。
+- **冇後端、冇分析、冇追蹤。** 喺瀏覽器版，資料存喺 `localStorage`；喺桌面
+  版，係你部電腦上面一個真實檔案。兩邊都一樣：GitHub repo 同部署嘅網站
+  永遠睇唔到你嘅出行記錄。
+- **一個檔，兩個殼。** 同一份 `index.html` 同時做網頁版同桌面版，運行時
+  自己偵測有冇 Tauri 嚟決定用邊個儲存方式。網頁版 依然完全冇 build step；
+  桌面版就得一步：`cp` 份 `index.html` 入個 bundle。
 - **GitHub Pages 直接 serve `main` branch。** Push 上 main 就係全部部署
   流程。
 - **i18n 用一個 translation dictionary + `t(key)` helper。** 需要插值嘅
@@ -92,6 +98,34 @@ python3 -m http.server 8000
 
 （直接 double-click `index.html` 都可以，不過 `localStorage` 喺 `http://`
 協議下面會運作得穩定啲，唔好用 `file://`。）
+
+---
+
+## 桌面版（macOS）
+
+網頁版啲資料存喺 `localStorage`，雖然係存喺你部機，但係唔耐用：Safari 大約
+一個星期冇用過個網站就會清走啲資料，你自己「清除瀏覽資料」都一樣會清走。
+一個成個月先開一次、用嚟決定幾時申請 ILR 嘅工具，咁樣好易一鋪清袋，五年
+記錄冇晒。
+
+桌面版就解決咗呢個問題。你嘅資料係一個 JSON 檔，放喺
+`~/Library/Application Support/uk.bnotracker.app/`，每日自動留一個備份
+（保留最近 30 個），而且 完全唔使上網都用得。
+
+**點裝：** 睇 [docs/INSTALL.zh-HK.md](docs/INSTALL.zh-HK.md)。個 app 冇簽名，
+所以第一次開嗰陣 macOS 會彈警告，份指南會一步步帶你過。
+
+**自己 build：**
+
+```sh
+cd desktop
+npm install
+npm run build      # release .app 同 .dmg 喺 src-tauri/target/release/bundle/
+npm run dev        # 開發模式，用 :8765 個 python server
+```
+
+需要裝 [Rust toolchain](https://rustup.rs)。Windows 版遲啲先做 — Tauri
+喺 macOS 上面 cross-compile 唔到 Windows，要用 CI 或者一部 Windows 機。
 
 ---
 
