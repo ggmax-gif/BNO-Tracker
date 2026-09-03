@@ -23,6 +23,11 @@ page explains what the warning means and how to get past it once.
 Double-clicking will **not** work the first time. macOS blocks apps that have
 not been signed and notarised by Apple, and the tracker is neither.
 
+> **If you see "BNO Tracker is damaged and can't be opened"** — that is a
+> different problem and the steps below will not help. It means you have the
+> 0.2.0 build, whose signature was malformed. Ask for a newer one; 0.2.1 and
+> later are fine. Don't move it to the Bin as the dialog suggests, just replace it.
+
 Instead:
 
 1. Open **System Settings → Privacy & Security**.
@@ -37,9 +42,11 @@ only shows up after macOS has blocked a launch attempt.
 From then on, the app opens by double-clicking like anything else.
 
 > **Exact wording and menu layout change between macOS releases.** These steps
-> were written against macOS 26. If what you see does not match, the thing you
-> are looking for is always in **Privacy & Security**, near the bottom of the
-> Security section, right after you have tried to open the app once.
+> were written against macOS 26, and the block was confirmed to be the ordinary
+> "unidentified developer" kind rather than a signature error. If what you see
+> does not match, the thing you are looking for is always in
+> **Privacy & Security**, near the bottom of the Security section, right after
+> you have tried to open the app once.
 
 ---
 
