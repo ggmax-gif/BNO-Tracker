@@ -93,6 +93,8 @@
   .cmp-val { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 3.2em; text-align: right; }
   .cmp-legend { margin-top: 12px; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
   .cmp-legend i { display: inline-block; width: 2px; height: 12px; background: var(--text); opacity: .5; }
+  .calc-notice { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  .calc-notice button { flex: none; }
   .info-box { background: var(--accent2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--accent); margin-bottom: 16px; }
   .warning-box { background: var(--amber-bg); border-left: 3px solid var(--amber); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--amber); margin-bottom: 16px; }
   .danger-box { background: var(--red-bg); border-left: 3px solid var(--red); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); margin-bottom: 16px; }
@@ -237,6 +239,8 @@ const I18N = {
     rulesFooterChecked: (d) => `UKVI 規則最後核對日期：${d}。`,
     rulesFooterStale: '（已超過 90 日，可能過時。）',
     rulesFooterUnverified: 'UKVI 規則未核對過 gov.uk。',
+    calcNoticeBody: '<strong>你嘅數字可能同之前唔同咗。</strong> 離港日數嘅計法喺 2026 年 9 月 3 日改正咗：而家係計 <strong>任何 12 個月內</strong> 嘅 180 日，即係 UKVI 真正要求嗰個。舊版本淨係睇 180 日窗口，計少咗 — 有啲人根本未夠資格，都顯示咗「符合 ILR 資格」。<strong>你嘅出行記錄一個字都冇改過</strong>，變嘅淨係計法。',
+    calcNoticeAck: '知道喇',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
@@ -336,6 +340,8 @@ const I18N = {
     rulesFooterChecked: (d) => `UKVI rules last checked ${d}.`,
     rulesFooterStale: '(Over 90 days ago — may be out of date.)',
     rulesFooterUnverified: 'UKVI rules not verified against gov.uk.',
+    calcNoticeBody: '<strong>Your numbers may have changed.</strong> The absence calculation was corrected on 3 September 2026: it now measures 180 days in <strong>any rolling 12 months</strong>, which is what UKVI actually requires. The previous version measured a 180-day window and under-reported — some people were shown as eligible for ILR when they were not. <strong>None of your trip records have been altered</strong>; only the calculation changed.',
+    calcNoticeAck: 'Got it',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
@@ -454,8 +460,34 @@ const BACKUP_KEEP = 30;
 const TAURI = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
 const isDesktop = !!TAURI;
 
+// A one-off notice for people whose numbers moved when the rolling window was
+// corrected. Shown only to someone who already had records: a fresh install
+// gets the ack stamped by getDefaultData(), because a new user never saw the old
+// numbers and a correction notice for a version they never used is just noise.
+// Stored with the data rather than per-device so the acknowledgement travels
+// with an export, and so a restored old backup correctly shows it again.
+const CALC_NOTICE_ID = 'rolling-12m-2026-09';
+
 function getDefaultData() {
-  return { familyName: 'Family', members: [], trips: [] };
+  return { familyName: 'Family', members: [], trips: [], calcNoticeAck: CALC_NOTICE_ID };
+}
+
+function calcNoticeDue() {
+  return data.members.length > 0 && data.calcNoticeAck !== CALC_NOTICE_ID;
+}
+
+function calcNotice() {
+  if (!calcNoticeDue()) return '';
+  return `<div class="info-box calc-notice">
+    <div>${t('calcNoticeBody')}</div>
+    <button class="btn btn-sm" onclick="ackCalcNotice()">${t('calcNoticeAck')}</button>
+  </div>`;
+}
+
+function ackCalcNotice() {
+  data.calcNoticeAck = CALC_NOTICE_ID;
+  persist();
+  render(getCurrentTab());
 }
 
 const WebStore = {
@@ -761,7 +793,7 @@ function render(tab) {
   // Prepended on every tab, not just the dashboard: members and the planner
   // render numbers too, and a staleness warning that only appears on one screen
   // is a warning the user can miss.
-  app.innerHTML = rulesBanner() + body;
+  app.innerHTML = calcNotice() + rulesBanner() + body;
 }
 
 function renderDashboard() {
