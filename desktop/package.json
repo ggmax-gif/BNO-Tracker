@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "sync": "cp ../index.html dist/index.html"
+    "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

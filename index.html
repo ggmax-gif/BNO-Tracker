@@ -106,6 +106,7 @@
   .app-footer strong { color: var(--text); }
   .app-footer a { color: var(--accent); text-decoration: none; }
   .app-footer a:hover { text-decoration: underline; }
+  .build-id { font-variant-numeric: tabular-nums; opacity: .75; white-space: nowrap; }
   @media print { .tabs, .header-actions, .btn, .tab { display: none !important; } .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; } }
   @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .container { padding: 10px; } }
 </style>
@@ -139,6 +140,22 @@
 <input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
 
 <script>
+// ============ BUILD IDENTITY ============
+// Two bundles of the same version with no version shown anywhere is how you end
+// up with a stale copy in /Applications and no way to tell. APP_VERSION is the
+// single source of truth: desktop/scripts/sync.mjs refuses to build when
+// tauri.conf.json disagrees, so a bundle can never claim a version the UI does
+// not show. BUILD_STAMP is substituted by that script in the COPY it writes to
+// dist/ - never in this file - which is what lets the desktop build carry a real
+// build time while the web build stays a static file with no build step.
+const APP_VERSION = '0.1.0';
+const BUILD_STAMP = '__BUILD_STAMP__';
+
+function buildLabel() {
+  const stamp = BUILD_STAMP.startsWith('__') ? '' : ' · ' + BUILD_STAMP;
+  return 'v' + APP_VERSION + ' · ' + (isDesktop ? t('shellDesktop') : t('shellWeb')) + stamp;
+}
+
 // ============ I18N ============
 const I18N = {
   zh: {
@@ -177,6 +194,7 @@ const I18N = {
     disclaimerBody: '本工具僅供 個人記錄同參考 之用，<strong>並非法律意見</strong>。BNO 簽證同 ILR 規則隨時會變，亦有個別情況。任何重要決定 請以 <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">UKVI 官方指引</a> 為準，必要時諮詢註冊移民律師。',
     privacyNote: '所有資料只 儲存喺你部裝置嘅瀏覽器（localStorage），唔會上傳去任何伺服器。',
     sourceLink: '原始碼',
+    shellDesktop: '桌面版', shellWeb: '網頁版',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
     stillAway: '仍未返港',
     btnAddTrip: '+ 記錄出行', noTrips: '尚未記錄任何出行',
@@ -270,6 +288,7 @@ const I18N = {
     disclaimerBody: 'This tool is for <strong>personal record-keeping only and is not legal advice</strong>. BNO visa and ILR rules change, and individual circumstances vary. Always rely on the <a href="https://www.gov.uk/british-national-overseas-bno-visa" target="_blank" rel="noopener">official UKVI guidance</a> and consult a registered immigration solicitor for any decision that matters.',
     privacyNote: 'All data is stored only in your browser (localStorage) — nothing is uploaded to any server.',
     sourceLink: 'Source code',
+    shellDesktop: 'Desktop', shellWeb: 'Web',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
     stillAway: 'Still away',
     btnAddTrip: '+ Record Trip', noTrips: 'No trips recorded yet',
@@ -369,7 +388,7 @@ function applyStaticI18n() {
   // Footer (disclaimer + privacy + source link)
   document.getElementById('appFooter').innerHTML = `
     <div><strong>${t('disclaimerHeading')}.</strong> ${t('disclaimerBody')}</div>
-    <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a></div>
+    <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a> · <span class="build-id">${esc(buildLabel())}</span></div>
   `;
 }
 
