@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Enforces the "no network requests" promise in the browser rather than
+     relying on nobody re-adding a CDN tag. connect-src 'self' is the one that
+     matters: it blocks any analytics beacon or third-party fetch outright.
+     'unsafe-inline' is unavoidable while the whole app is one inline script
+     block and nonces would need a build step; esc() covers the injection path
+     instead. ipc:/ipc.localhost are for the Tauri shell - a header CSP and
+     a meta CSP are both enforced, so omitting them here would break the desktop
+     app's export/import bridge. frame-ancestors is deliberately absent: it is
+     ignored in a meta tag and only warns. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>BNO 身份狀態追蹤器</title>
 <style>
   :root {
@@ -150,7 +160,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.2.2';
+const APP_VERSION = '0.2.3';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
