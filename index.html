@@ -150,7 +150,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.2.2';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -520,13 +520,27 @@ const DesktopStore = {
     if (!(await TAURI.fs.exists(p.file))) return getDefaultData();
     return JSON.parse(await TAURI.fs.readTextFile(p.file));
   },
-  async save(d) {
+  // Saves are serialised through this chain. Two overlapping calls used to share
+  // one temp path: the first would rename away the file the second was still
+  // writing, so the second failed with ENOENT while its data landed under the
+  // first's rename. The user then saw "Save failed" for a save that worked, and
+  // which edit survived depended on timing. Rapid deletes are enough to trigger it.
+  _queue: Promise.resolve(),
+  save(d) {
+    // Serialise the payload now, not when the turn comes up, so a queued write
+    // stores the state that was current when the user acted.
+    const contents = JSON.stringify(d, null, 2);
+    const next = this._queue.then(() => this._write(contents), () => this._write(contents));
+    this._queue = next.catch(() => {});   // one failure must not wedge the chain
+    return next;
+  },
+  async _write(contents) {
     const p = await this._paths();
     await this._backup(p);
     // Atomic write: a crash between these two lines leaves the previous file
     // intact. Writing in place would truncate the only copy of a family's
     // records, which on desktop is the whole dataset rather than a cache.
-    await TAURI.fs.writeTextFile(p.tmp, JSON.stringify(d, null, 2));
+    await TAURI.fs.writeTextFile(p.tmp, contents);
     await TAURI.fs.rename(p.tmp, p.file);
   },
   // One snapshot per calendar day, newest BACKUP_KEEP retained. In a browser a
@@ -1251,7 +1265,10 @@ async function importData() {
 // non-technical user cannot, so the import gate has to be real.
 // Returns null when valid, otherwise a human-readable reason.
 function validateImport(o) {
-  const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(parseDate(v));
+  // Round-trip rather than just parse: new Date(2026, 1, 30) silently rolls over
+  // to 2 March, so a hand-edited or corrupted export would import clean with
+  // every trip date quietly shifted.
+  const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && toDateStr(parseDate(v)) === v;
   if (!o || typeof o !== 'object' || Array.isArray(o)) return t('vNotObject');
   if (!Array.isArray(o.members)) return t('vMembers');
   if (!Array.isArray(o.trips)) return t('vTrips');

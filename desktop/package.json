@@ -1,7 +1,7 @@
 {
   "name": "bno-tracker-desktop",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Desktop shell for the BNO Tracker. The app itself is ../index.html.",
   "scripts": {
     "dev": "tauri dev",
