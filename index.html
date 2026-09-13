@@ -132,12 +132,12 @@
   </div>
   <div class="header-actions">
     <div class="lang-toggle" role="group" aria-label="Language">
-      <button id="langZh" onclick="setLang('zh')" disabled>中文</button>
-      <button id="langEn" onclick="setLang('en')" disabled>English</button>
+      <button id="langZh" data-act="setLang" data-arg="zh" disabled>中文</button>
+      <button id="langEn" data-act="setLang" data-arg="en" disabled>English</button>
     </div>
-    <button class="btn" id="btnExportJson" onclick="exportData()" disabled></button>
-    <button class="btn" id="btnImportJson" onclick="importData()" disabled></button>
-    <button class="btn" id="btnExportCsv" onclick="exportCSV()" disabled></button>
+    <button class="btn" id="btnExportJson" data-act="exportData" disabled></button>
+    <button class="btn" id="btnImportJson" data-act="importData" disabled></button>
+    <button class="btn" id="btnExportCsv" data-act="exportCSV" disabled></button>
   </div>
 </div>
 
@@ -149,7 +149,7 @@
 
 <div id="saveError" class="save-error" hidden></div>
 
-<input type="file" id="importInput" accept=".json" style="display:none" onchange="handleImport(event)">
+<input type="file" id="importInput" accept=".json" style="display:none">
 
 <script>
 // ============ BUILD IDENTITY ============
@@ -160,7 +160,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.2.3';
+const APP_VERSION = '0.2.4';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -441,10 +441,10 @@ function applyStaticI18n() {
   document.getElementById('langEn').classList.toggle('active', currentLang === 'en');
   // Tabs
   document.getElementById('tabs').innerHTML = `
-    <button class="tab" data-tab="dashboard" onclick="showTab('dashboard')">${t('tabDashboard')}</button>
-    <button class="tab" data-tab="members" onclick="showTab('members')">${t('tabMembers')}</button>
-    <button class="tab" data-tab="trips" onclick="showTab('trips')">${t('tabTrips')}</button>
-    <button class="tab" data-tab="planner" onclick="showTab('planner')">${t('tabPlanner')}</button>
+    <button class="tab" data-tab="dashboard" data-act="showTab" data-arg="dashboard">${t('tabDashboard')}</button>
+    <button class="tab" data-tab="members" data-act="showTab" data-arg="members">${t('tabMembers')}</button>
+    <button class="tab" data-tab="trips" data-act="showTab" data-arg="trips">${t('tabTrips')}</button>
+    <button class="tab" data-tab="planner" data-act="showTab" data-arg="planner">${t('tabPlanner')}</button>
   `;
   const tab = getCurrentTab();
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -490,7 +490,7 @@ function calcNotice() {
   if (!calcNoticeDue()) return '';
   return `<div class="info-box calc-notice">
     <div>${t('calcNoticeBody')}</div>
-    <button class="btn btn-sm" onclick="ackCalcNotice()">${t('calcNoticeAck')}</button>
+    <button class="btn btn-sm" data-act="ackCalcNotice">${t('calcNoticeAck')}</button>
   </div>`;
 }
 
@@ -823,7 +823,7 @@ function render(tab) {
 function renderDashboard() {
   const totalMembers = data.members.length;
   if (totalMembers === 0) {
-    return `<div class="empty-state"><h2>${t('welcomeTitle')}</h2><p>${t('welcomeMsg')}</p><button class="btn btn-primary" onclick="showTab('members')">${t('addFirstMember')}</button></div>`;
+    return `<div class="empty-state"><h2>${t('welcomeTitle')}</h2><p>${t('welcomeMsg')}</p><button class="btn btn-primary" data-act="showTab" data-arg="members">${t('addFirstMember')}</button></div>`;
   }
 
   const results = data.members.map(m => ({ member: m, calc: calcRollingWindow(m, data.trips) }));
@@ -923,8 +923,8 @@ function renderMembers() {
         <td><span class="badge badge-${calc.status}">${statusBadge}</span></td>
         <td>${!calc.isCompliant ? `<span class="badge badge-red">${t('ilrNotEligible')}</span>` : calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
         <td>
-          <button class="btn btn-sm" onclick="editMember('${m.id}')">${t('btnEdit')}</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">${t('btnDelete')}</button>
+          <button class="btn btn-sm" data-act="editMember" data-arg="${m.id}">${t('btnEdit')}</button>
+          <button class="btn btn-sm btn-danger" data-act="deleteMember" data-arg="${m.id}">${t('btnDelete')}</button>
         </td>
       </tr>`;
   }).join('');
@@ -935,7 +935,7 @@ function renderMembers() {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h2 style="margin:0">${t('titleMembers')}</h2>
-        <button class="btn btn-primary" onclick="showMemberModal()">${t('btnAddMember')}</button>
+        <button class="btn btn-primary" data-act="showMemberModal">${t('btnAddMember')}</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -960,7 +960,7 @@ function renderTrips() {
       <td>${t('daysSuffix')(tripAbsenceDays(tr, _todayMidnight()))}</td>
       <td>${esc(tr.purpose || '-')}</td>
       <td>
-        <button class="btn btn-sm btn-danger" onclick="deleteTrip('${tr.id}')">${t('btnDelete')}</button>
+        <button class="btn btn-sm btn-danger" data-act="deleteTrip" data-arg="${tr.id}">${t('btnDelete')}</button>
       </td>
     </tr>`).join('');
 
@@ -972,7 +972,7 @@ function renderTrips() {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h2 style="margin:0">${t('titleTrips')}</h2>
-        <button class="btn btn-primary" onclick="showTripModal()">${t('btnAddTrip')}</button>
+        <button class="btn btn-primary" data-act="showTripModal">${t('btnAddTrip')}</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -1008,7 +1008,7 @@ function renderPlanner() {
           <input type="date" id="planReturn">
         </div>
         <div class="form-group" style="justify-content:flex-end">
-          <button class="btn btn-primary" onclick="calcPlanner()">${t('btnCalculate')}</button>
+          <button class="btn btn-primary" data-act="calcPlanner">${t('btnCalculate')}</button>
         </div>
       </div>
     </div>
@@ -1049,8 +1049,8 @@ function showTripModal(editId) {
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn" onclick="closeModal('tripModal')">${t('btnCancel')}</button>
-        <button class="btn btn-primary" onclick="saveTrip('${editId || ''}')">${t('btnSave')}</button>
+        <button class="btn" data-act="closeModal" data-arg="tripModal">${t('btnCancel')}</button>
+        <button class="btn btn-primary" data-act="saveTrip" data-arg="${editId || ''}">${t('btnSave')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -1096,8 +1096,8 @@ function showMemberModal(editId) {
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn" onclick="closeModal('memberModal')">${t('btnCancel')}</button>
-        <button class="btn btn-primary" onclick="saveMember('${editId || ''}')">${t('btnSave')}</button>
+        <button class="btn" data-act="closeModal" data-arg="memberModal">${t('btnCancel')}</button>
+        <button class="btn btn-primary" data-act="saveMember" data-arg="${editId || ''}">${t('btnSave')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -1375,6 +1375,28 @@ function renderComparison(results) {
   }).join('');
   return `<div class="cmp">${rows}</div><div class="cmp-legend"><i></i> ${t('chartCapLabel')}</div>`;
 }
+
+// ============ EVENT WIRING ============
+// One delegated listener rather than inline onclick attributes. Those are
+// silently dead under a nonce-based CSP - Tauri injects a nonce into script-src,
+// and per CSP3 a nonce makes 'unsafe-inline' inert for event-handler attributes,
+// so every button in the packaged app did nothing while the attribute sat there
+// looking correct. Delegation works under any CSP and survives re-rendering,
+// which matters because most of this UI is rebuilt from template strings.
+const ACTIONS = {
+  setLang, showTab, showTripModal, showMemberModal, exportData, importData,
+  exportCSV, saveTrip, saveMember, editMember, deleteTrip, deleteMember,
+  closeModal, calcPlanner, ackCalcNotice,
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  const fn = ACTIONS[el.dataset.act];
+  if (fn) fn(el.dataset.arg);
+});
+
+document.getElementById('importInput').addEventListener('change', handleImport);
 
 // ============ INIT ============
 function showLoadFailure(err) {
