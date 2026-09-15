@@ -150,9 +150,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FILES=$(find dist -name '*.exe')
-          echo "attaching: $FILES"
-          gh release create "${GITHUB_REF_NAME}" $FILES \
+          # The installer filename contains a space, so the list has to survive
+          # word splitting - an unquoted $(find) handed gh two broken paths.
+          mapfile -d '' -t FILES < <(find dist -name '*.exe' -print0)
+          printf 'attaching: %s\n' "${FILES[@]}"
+          [ ${#FILES[@]} -gt 0 ] || { echo "no installer found"; exit 1; }
+          gh release create "${GITHUB_REF_NAME}" "${FILES[@]}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Windows installer, built on windows-latest. Unsigned, so SmartScreen will warn on first run. macOS builds are produced locally and attached by hand." \
-            || gh release upload "${GITHUB_REF_NAME}" $FILES --clobber
+            --notes "Windows installer, built on a windows-latest runner. Unsigned, so SmartScreen warns on first run - see docs/INSTALL.md. The macOS build is produced locally and attached by hand." \
+            || gh release upload "${GITHUB_REF_NAME}" "${FILES[@]}" --clobber
