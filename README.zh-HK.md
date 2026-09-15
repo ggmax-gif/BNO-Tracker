@@ -108,12 +108,14 @@ python3 -m http.server 8000
 一個成個月先開一次、用嚟決定幾時申請 ILR 嘅工具，咁樣好易一鋪清袋，五年
 記錄冇晒。
 
-桌面版就解決咗呢個問題。你嘅資料係一個 JSON 檔，放喺
-`~/Library/Application Support/uk.bnotracker.app/`，每日自動留一個備份
-（保留最近 30 個），而且 完全唔使上網都用得。
+桌面版就解決咗呢個問題。你嘅資料係一個 JSON 檔 — macOS 放喺
+`~/Library/Application Support/uk.bnotracker.app/`，Windows 放喺
+`%APPDATA%\uk.bnotracker.app\` — 每日自動留一個備份（保留最近 30 個），
+而且 完全唔使上網都用得。
 
-**點裝：** 睇 [docs/INSTALL.zh-HK.md](docs/INSTALL.zh-HK.md)。個 app 冇簽名，
-所以第一次開嗰陣 macOS 會彈警告，份指南會一步步帶你過。
+**點裝：** 睇 [docs/INSTALL.zh-HK.md](docs/INSTALL.zh-HK.md)，Mac 同 Windows
+兩邊都有。兩個版本都冇簽名，所以第一次開嗰陣兩個系統都會彈警告，份指南會
+一步步帶你過。
 
 **自己 build：**
 
@@ -124,8 +126,13 @@ npm run build      # release .app 同 .dmg 喺 src-tauri/target/release/bundle/
 npm run dev        # 開發模式，用 :8765 個 python server
 ```
 
-需要裝 [Rust toolchain](https://rustup.rs)。Windows 版遲啲先做 — Tauri
-喺 macOS 上面 cross-compile 唔到 Windows，要用 CI 或者一部 Windows 機。
+macOS 版需要裝 [Rust toolchain](https://rustup.rs)。
+
+**Windows 版** 係用 GitHub Actions 喺 `windows-latest` runner 上面 build，
+因為 Tauri 喺 macOS 上面 cross-compile 唔到 Windows。每次 push 都會行計算引擎
+測試、靜態檢查同 Windows build；打 `v*` tag 就會將安裝檔掛上 release。CI 仲會
+真係裝一次同確認開得到，不過 **從來冇人喺 Windows 版度撳過任何一個掣** —
+要等有人喺真機開過，先當佢真係試過。
 
 ---
 

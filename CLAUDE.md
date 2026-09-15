@@ -2,7 +2,7 @@
 
 One file: `index.html`, ~68 KB, no backend, **zero dependencies and zero network requests**. Chart.js used to be a CDN tag; it was 201 KB to draw a bar the progress bars already implied, and it went on 2026-09-03. Eighteen commits: nine in May 2026, then eight on 2026-09-03 plus the merge. Live on GitHub Pages at `ggmax-gif/BNO-Tracker`.
 
-**Two shells, one file.** The same `index.html` runs as the web page and inside a Tauri v2 macOS app under `desktop/`, picking its storage backend at runtime by detecting `window.__TAURI__`. The web build still has no build step; the desktop build has exactly one, a `cp` in `desktop/scripts/sync.mjs`. Windows is deliberately not done — Tauri cannot cross-compile it from macOS.
+**Two shells, one file.** The same `index.html` runs as the web page and inside a Tauri v2 macOS app under `desktop/`, picking its storage backend at runtime by detecting `window.__TAURI__`. The web build still has no build step; the desktop build has exactly one, a `cp` in `desktop/scripts/sync.mjs`. Windows is built in CI (`.github/workflows/build.yml`) on a `windows-latest` runner, since Tauri cannot cross-compile it from macOS; the macOS build stays local. **No human has clicked a button in the Windows build** — CI proves it compiles, installs and boots, nothing more.
 
 **What this is.** An absence-day tracker for families on the UK BNO visa route, encoding the 180-days-in-any-rolling-12-months rule that gates ILR. **Real strangers use it to decide when to apply for indefinite leave to remain.** A wrong number here is not a cosmetic bug.
 

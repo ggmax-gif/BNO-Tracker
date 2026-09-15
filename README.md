@@ -118,12 +118,14 @@ interaction, and any "clear browsing data" wipes it. For a tool you open once
 a month to decide when to file for ILR, that is a real way to lose five years
 of records.
 
-The desktop build fixes that. Your data is a plain JSON file in
-`~/Library/Application Support/uk.bnotracker.app/`, it keeps one dated backup
-per day (newest 30), and it works with no network at all.
+The desktop build fixes that. Your data is a plain JSON file — under
+`~/Library/Application Support/uk.bnotracker.app/` on macOS,
+`%APPDATA%\uk.bnotracker.app\` on Windows — it keeps one dated backup per day
+(newest 30), and it works with no network at all.
 
-**Installing:** see [docs/INSTALL.md](docs/INSTALL.md). The app is unsigned, so
-macOS will warn you the first time — the guide walks through it.
+**Installing:** see [docs/INSTALL.md](docs/INSTALL.md), which covers both
+macOS and Windows. Neither build is code-signed, so each OS warns the first
+time; the guide walks through both.
 
 **Building it yourself:**
 
@@ -134,8 +136,14 @@ npm run build      # release .app and .dmg under src-tauri/target/release/bundle
 npm run dev        # dev mode, served from the python server on :8765
 ```
 
-Requires the [Rust toolchain](https://rustup.rs). Windows is a later phase —
-Tauri cannot cross-compile it from macOS, so it needs CI or a Windows machine.
+Requires the [Rust toolchain](https://rustup.rs) for the macOS build.
+
+**Windows** is built by GitHub Actions on a `windows-latest` runner, because
+Tauri cannot cross-compile it from macOS. Every push runs the engine suite, the
+static guards and a Windows build; a `v*` tag attaches the installer to a
+release. CI also installs the result and checks it launches, but **nobody has
+clicked a button in the Windows build** — treat it as untested in the way that
+matters until someone opens it on a real machine.
 
 ---
 
