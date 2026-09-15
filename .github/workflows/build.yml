@@ -1,0 +1,104 @@
+name: build
+
+# Windows is built here because Tauri cannot cross-compile it from macOS and
+# there is no Windows machine to hand. The macOS build stays local.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed only by the release job
+
+jobs:
+  checks:
+    name: engine and static guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Static guards
+        run: node test/static-checks.cjs
+      - name: Engine suite
+        run: node test/suite.cjs
+      - name: Differential fuzz against the brute-force oracle
+        run: node test/fuzz.cjs
+      - name: Version guard (all four declarations must agree)
+        working-directory: desktop
+        run: npm run sync
+
+  windows:
+    name: windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: 'desktop/src-tauri -> target' }
+
+      - name: Install CLI
+        working-directory: desktop
+        run: npm ci
+
+      # --bundles overrides bundle.targets, which is set to the macOS pair for
+      # local builds. NSIS rather than MSI: smaller, and a friendlier install
+      # for a non-technical recipient.
+      - name: Build
+        working-directory: desktop
+        run: npx tauri build --bundles nsis
+
+      # The app booting is the one thing CI can actually prove. It exercises the
+      # WebView, the inline script, boot(), and the filesystem bridge: if the
+      # data directory appears, all four worked.
+      - name: Smoke test — does it launch and reach the disk?
+        shell: pwsh
+        run: |
+          $exe = "desktop/src-tauri/target/release/app.exe"
+          if (-not (Test-Path $exe)) { throw "no binary at $exe" }
+          $dir = "$env:APPDATA\uk.bnotracker.app"
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          $p = Start-Process $exe -PassThru
+          for ($i = 0; $i -lt 30 -and -not (Test-Path $dir); $i++) { Start-Sleep -Seconds 1 }
+          $ok = Test-Path $dir
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "app launched but never created $dir - boot() or the fs bridge failed" }
+          Write-Host "boot reached the disk:"; Get-ChildItem $dir | ForEach-Object { Write-Host "  $_" }
+
+      - name: Name the installer after the version
+        shell: pwsh
+        id: ver
+        run: |
+          $v = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "version $v"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bno-tracker-windows-${{ steps.ver.outputs.version }}
+          path: desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  release:
+    name: attach installer to the release
+    needs: [checks, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES=$(find dist -name '*.exe')
+          echo "attaching: $FILES"
+          gh release create "${GITHUB_REF_NAME}" $FILES \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Windows installer, built on windows-latest. Unsigned, so SmartScreen will warn on first run. macOS builds are produced locally and attached by hand." \
+            || gh release upload "${GITHUB_REF_NAME}" $FILES --clobber
