@@ -150,6 +150,7 @@
 <div id="saveError" class="save-error" hidden></div>
 
 <input type="file" id="importInput" accept=".json" style="display:none">
+<input type="file" id="csvInput" accept=".csv,text/csv" style="display:none">
 
 <script>
 // ============ BUILD IDENTITY ============
@@ -160,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.2.4';
+const APP_VERSION = '0.3.0';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -305,6 +306,19 @@ const I18N = {
     loadFailBody: (where) => `程式冇改動過亦都冇覆蓋過個檔。你嘅資料同每日備份喺：${where}`,
     loadFailWeb: '程式冇改動過亦都冇覆蓋過你嘅資料。如果你之前匯出過 JSON 備份，可以匯入返嚟復原。',
     csvHeader: '成員,離港日期,返港日期,持續時間 (日),目的',
+    filterAll: '所有成員', filterLabel: '只睇',
+    btnImportCsv: '匯入 CSV',
+    csvTitle: '匯入 CSV',
+    csvSummary: (n, m) => `讀到 ${n} 筆出行記錄，涉及 ${m} 位成員。`,
+    csvDupNote: (n) => `其中 ${n} 筆同現有記錄完全一樣，用「加入」嘅話會自動略過。`,
+    csvReplaceWarn: (n) => `「取代全部」會刪走現時全部 ${n} 筆記錄。`,
+    btnCsvReplace: '取代全部', btnCsvAdd: '加入現有記錄',
+    csvDoneAdd: (a, s) => `加咗 ${a} 筆，略過重複嘅 ${s} 筆。`,
+    csvDoneReplace: (n) => `已經用 ${n} 筆記錄取代晒。`,
+    csvErrNoRows: 'CSV 入面搵唔到任何出行記錄。',
+    csvErrMember: (row, name) => `第 ${row} 行：搵唔到叫「${name}」嘅成員。請先喺「家庭成員」加佢，或者改返個名。`,
+    csvErrDate: (row, v) => `第 ${row} 行：日期「${v}」唔係 YYYY-MM-DD 格式。`,
+    csvErrOrder: (row) => `第 ${row} 行：返港日期早過離港日期。`,
     unknown: '未知',
     locale: 'zh-HK',
   },
@@ -406,6 +420,19 @@ const I18N = {
     loadFailBody: (where) => `Nothing has been changed or overwritten. Your data and daily backups are in: ${where}`,
     loadFailWeb: 'Nothing has been changed or overwritten. If you exported a JSON backup earlier, you can import it to recover.',
     csvHeader: 'Member,Departure Date,Return Date,Duration (days),Purpose',
+    filterAll: 'All members', filterLabel: 'Showing',
+    btnImportCsv: 'Import CSV',
+    csvTitle: 'Import CSV',
+    csvSummary: (n, m) => `Read ${n} trips across ${m} member${m === 1 ? '' : 's'}.`,
+    csvDupNote: (n) => `${n} of them already exist exactly as recorded, and will be skipped if you add.`,
+    csvReplaceWarn: (n) => `Replacing discards all ${n} trips currently recorded.`,
+    btnCsvReplace: 'Replace all', btnCsvAdd: 'Add to existing',
+    csvDoneAdd: (a, s) => `Added ${a}, skipped ${s} duplicate${s === 1 ? '' : 's'}.`,
+    csvDoneReplace: (n) => `Replaced everything with ${n} trip${n === 1 ? '' : 's'}.`,
+    csvErrNoRows: 'No trips found in that CSV.',
+    csvErrMember: (row, name) => `Row ${row}: no member called "${name}". Add them under Family Members first, or correct the name.`,
+    csvErrDate: (row, v) => `Row ${row}: "${v}" is not a YYYY-MM-DD date.`,
+    csvErrOrder: (row) => `Row ${row}: the return date is before the departure date.`,
     unknown: 'Unknown',
     locale: 'en-GB',
   },
@@ -949,8 +976,23 @@ function renderMembers() {
     </div>`;
 }
 
+// Which member the Trips tab is showing. Deliberately not persisted: it is a
+// view, not a preference, and a filter silently still applied on a later visit
+// is how someone concludes a trip has gone missing.
+let tripFilter = 'all';
+
+function setTripFilter(v) { tripFilter = v || 'all'; render('trips'); }
+
+function filteredTrips() {
+  const keep = data.trips.filter(tr => tripFilter === 'all' || tr.memberId === tripFilter);
+  return keep.sort((a,b) => parseDate(b.departureDate) - parseDate(a.departureDate));
+}
+
 function renderTrips() {
-  const sortedTrips = [...data.trips].sort((a,b) => parseDate(b.departureDate) - parseDate(a.departureDate));
+  // A member deleted while their filter was active would leave the tab empty
+  // with no rows and no explanation, so fall back to showing everyone.
+  if (tripFilter !== 'all' && !data.members.some(m => m.id === tripFilter)) tripFilter = 'all';
+  const sortedTrips = filteredTrips();
 
   let rows = sortedTrips.map(tr => `
     <tr>
@@ -970,9 +1012,18 @@ function renderTrips() {
     <div class="info-box"><strong>${t('midnightRuleTitle')}</strong><br>${t('midnightRuleBody')}</div>
     <div class="warning-box"><strong>${t('crownDepTitle')}</strong><br>${t('crownDepBody')}</div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap">
         <h2 style="margin:0">${t('titleTrips')}</h2>
-        <button class="btn btn-primary" data-act="showTripModal">${t('btnAddTrip')}</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:12px;color:var(--text2)">${t('filterLabel')}</label>
+          <select data-act-change="setTripFilter">
+            <option value="all"${tripFilter === 'all' ? ' selected' : ''}>${t('filterAll')}</option>
+            ${data.members.map(m => `<option value="${esc(m.id)}"${tripFilter === m.id ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" data-act="exportCSV">${t('exportCsv')}</button>
+          <button class="btn btn-sm" data-act="importCSV">${t('btnImportCsv')}</button>
+          <button class="btn btn-primary" data-act="showTripModal">${t('btnAddTrip')}</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -1323,16 +1374,21 @@ function handleImport(event) {
   event.target.value = '';
 }
 
+// Exports whatever the Trips tab is currently showing, so filtering to one
+// person and exporting gives you just them. The filename says which.
 function exportCSV() {
-  if (data.trips.length === 0) { alert(t('alertNoTrips')); return; }
+  const rows = filteredTrips();
+  if (rows.length === 0) { alert(t('alertNoTrips')); return; }
+  const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   let csv = t('csvHeader') + '\n';
-  data.trips.forEach(tr => {
+  rows.forEach(tr => {
     const name = getMemberName(tr.memberId);
     // Midnight rule absence days (depart inclusive, return exclusive)
     const dur = tripAbsenceDays(tr, _todayMidnight());
-    csv += `"${name}","${tr.departureDate}","${tr.returnDate || ''}",${dur},"${tr.purpose || ''}"\n`;
+    csv += [q(name), q(tr.departureDate), q(tr.returnDate || ''), dur, q(tr.purpose || '')].join(',') + '\n';
   });
-  saveOut(`bno-trips-${todayStr()}.csv`, csv, 'text/csv');
+  const who = tripFilter === 'all' ? '' : '-' + getMemberName(tripFilter).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
+  saveOut(`bno-trips${who}-${todayStr()}.csv`, csv, 'text/csv');
 }
 
 // ============ HELPERS ============
@@ -1376,6 +1432,129 @@ function renderComparison(results) {
   return `<div class="cmp">${rows}</div><div class="cmp-legend"><i></i> ${t('chartCapLabel')}</div>`;
 }
 
+// ============ CSV IMPORT ============
+// Round-trips the export format: Member, Departure, Return, Duration, Purpose.
+// Duration is recomputed rather than trusted - it is derived from the other two
+// columns, and a stale value in a hand-edited file must not silently become the
+// number the app reports.
+function parseCSV(text) {
+  const rows = []; let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c !== '\r') field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(f => f.trim() !== ''));
+}
+
+// Returns { trips, error }. Member names are resolved against the people who
+// already exist; an unknown name is rejected rather than invented, because a
+// member needs a BNO grant date and CSV carries none - guessing one would
+// produce a confident, wrong ILR date.
+function parseTripsCSV(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) return { error: t('csvErrNoRows') };
+  const byName = new Map(data.members.map(m => [m.name.trim().toLowerCase(), m.id]));
+  const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && toDateStr(parseDate(v)) === v;
+  const first = (rows[0][0] || '').trim().toLowerCase();
+  const start = (first === 'member' || first === '成員') ? 1 : 0;   // header in either language
+  const trips = [];
+  for (let i = start; i < rows.length; i++) {
+    const line = i + 1;
+    const [rawName = '', dep = '', ret = '', , purpose = ''] = rows[i].map(v => v.trim());
+    if (!rawName && !dep) continue;
+    const id = byName.get(rawName.toLowerCase());
+    if (!id) return { error: t('csvErrMember')(line, rawName) };
+    if (!isDate(dep)) return { error: t('csvErrDate')(line, dep) };
+    if (ret && !isDate(ret)) return { error: t('csvErrDate')(line, ret) };
+    if (ret && ret < dep) return { error: t('csvErrOrder')(line) };
+    trips.push({ id: genId(), memberId: id, departureDate: dep, returnDate: ret, purpose });
+  }
+  if (!trips.length) return { error: t('csvErrNoRows') };
+  return { trips };
+}
+
+const sameTrip = (a, b) => a.memberId === b.memberId
+  && a.departureDate === b.departureDate
+  && (a.returnDate || '') === (b.returnDate || '');
+
+let pendingCsv = null;
+
+function applyCsvImport(text) {
+  const { trips, error } = parseTripsCSV(text);
+  if (error) { alert(t('alertInvalidFile') + '\n\n' + error); return; }
+  pendingCsv = trips;
+  const dups = trips.filter(n => data.trips.some(o => sameTrip(n, o))).length;
+  const members = new Set(trips.map(tr => tr.memberId)).size;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'csvModal';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>${t('csvTitle')}</h2>
+      <p style="font-size:13px;margin-bottom:8px">${esc(t('csvSummary')(trips.length, members))}</p>
+      ${dups ? `<p style="font-size:13px;color:var(--text2);margin-bottom:8px">${esc(t('csvDupNote')(dups))}</p>` : ''}
+      ${data.trips.length ? `<div class="warning-box">${esc(t('csvReplaceWarn')(data.trips.length))}</div>` : ''}
+      <div class="modal-actions">
+        <button class="btn" data-act="closeModal" data-arg="csvModal">${t('btnCancel')}</button>
+        <button class="btn" data-act="csvAdd">${t('btnCsvAdd')}</button>
+        <button class="btn btn-primary btn-danger" data-act="csvReplace">${t('btnCsvReplace')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function csvAdd() {
+  if (!pendingCsv) return;
+  const fresh = pendingCsv.filter(n => !data.trips.some(o => sameTrip(n, o)));
+  const skipped = pendingCsv.length - fresh.length;
+  data.trips = data.trips.concat(fresh);
+  finishCsv(t('csvDoneAdd')(fresh.length, skipped));
+}
+
+function csvReplace() {
+  if (!pendingCsv) return;
+  const n = pendingCsv.length;
+  data.trips = pendingCsv;
+  finishCsv(t('csvDoneReplace')(n));
+}
+
+function finishCsv(message) {
+  pendingCsv = null;
+  closeModal('csvModal');
+  persist();
+  render(getCurrentTab());
+  alert(message);
+}
+
+async function importCSV() {
+  if (isDesktop) {
+    let text;
+    try { text = await TAURI.core.invoke('import_file', { extensions: ['csv'] }); }
+    catch (err) { showStoreError(err); return; }
+    if (text == null) return;
+    applyCsvImport(text);
+    return;
+  }
+  document.getElementById('csvInput').click();
+}
+
+function handleCsvImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => applyCsvImport(e.target.result);
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
 // ============ EVENT WIRING ============
 // One delegated listener rather than inline onclick attributes. Those are
 // silently dead under a nonce-based CSP - Tauri injects a nonce into script-src,
@@ -1387,6 +1566,7 @@ const ACTIONS = {
   setLang, showTab, showTripModal, showMemberModal, exportData, importData,
   exportCSV, saveTrip, saveMember, editMember, deleteTrip, deleteMember,
   closeModal, calcPlanner, ackCalcNotice,
+  setTripFilter, importCSV, csvAdd, csvReplace,
 };
 
 document.addEventListener('click', e => {
@@ -1396,7 +1576,16 @@ document.addEventListener('click', e => {
   if (fn) fn(el.dataset.arg);
 });
 
+// Selects fire change, not click, so they need their own delegated listener.
+document.addEventListener('change', e => {
+  const el = e.target.closest && e.target.closest('[data-act-change]');
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.actChange];
+  if (fn) fn(el.value);
+});
+
 document.getElementById('importInput').addEventListener('change', handleImport);
+document.getElementById('csvInput').addEventListener('change', handleCsvImport);
 
 // ============ INIT ============
 function showLoadFailure(err) {

@@ -11,7 +11,7 @@ check('no inline event handlers', inline.length === 0, inline.length ? `found ${
 
 // Every data-act must resolve to something in the ACTIONS map, or the button
 // is silently dead in exactly the same way.
-const acts = [...html.matchAll(/data-act="([^"]+)"/g)].map(m => m[1]);
+const acts = [...html.matchAll(/data-act(?:-change)?="([^"]+)"/g)].map(m => m[1]);
 const mapBlock = (html.match(/const ACTIONS = \{([\s\S]*?)\};/) || [,''])[1];
 const mapped = new Set(mapBlock.split(/[,\s]+/).filter(Boolean));
 const missing = [...new Set(acts)].filter(a => !mapped.has(a));

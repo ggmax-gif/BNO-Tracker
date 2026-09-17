@@ -24,11 +24,18 @@ async fn export_file(
 }
 
 #[tauri::command]
-async fn import_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn import_file(
+    app: tauri::AppHandle,
+    extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    // The frontend says which extensions to offer - JSON for a full backup, CSV
+    // for trips - so the picker does not hide the file the user came to choose.
+    let exts = extensions.unwrap_or_else(|| vec!["json".to_string()]);
+    let refs: Vec<&str> = exts.iter().map(String::as_str).collect();
     match app
         .dialog()
         .file()
-        .add_filter("BNO Tracker backup", &["json"])
+        .add_filter("BNO Tracker", &refs)
         .blocking_pick_file()
     {
         Some(p) => {
