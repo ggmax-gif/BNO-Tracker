@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -311,10 +311,11 @@ const I18N = {
     csvTitle: '匯入 CSV',
     csvSummary: (n, m) => `讀到 ${n} 筆出行記錄，涉及 ${m} 位成員。`,
     csvDupNote: (n) => `其中 ${n} 筆同現有記錄完全一樣，用「加入」嘅話會自動略過。`,
-    csvReplaceWarn: (n) => `「取代全部」會刪走現時全部 ${n} 筆記錄。`,
-    btnCsvReplace: '取代全部', btnCsvAdd: '加入現有記錄',
+    csvReplaceWarn: (n, who) => `會刪走 ${who} 現有嘅 ${n} 筆記錄，其他成員唔會郁到。`,
+    btnCsvReplace: '取代佢哋嘅記錄', btnCsvAdd: '加入現有記錄',
+    nameJoin: '、',
     csvDoneAdd: (a, s) => `加咗 ${a} 筆，略過重複嘅 ${s} 筆。`,
-    csvDoneReplace: (n) => `已經用 ${n} 筆記錄取代晒。`,
+    csvDoneReplace: (a, r, who) => `${who}：用 ${a} 筆記錄取代咗原本 ${r} 筆。`,
     csvErrNoRows: 'CSV 入面搵唔到任何出行記錄。',
     csvErrMember: (row, name) => `第 ${row} 行：搵唔到叫「${name}」嘅成員。請先喺「家庭成員」加佢，或者改返個名。`,
     csvErrDate: (row, v) => `第 ${row} 行：日期「${v}」唔係 YYYY-MM-DD 格式。`,
@@ -425,10 +426,11 @@ const I18N = {
     csvTitle: 'Import CSV',
     csvSummary: (n, m) => `Read ${n} trips across ${m} member${m === 1 ? '' : 's'}.`,
     csvDupNote: (n) => `${n} of them already exist exactly as recorded, and will be skipped if you add.`,
-    csvReplaceWarn: (n) => `Replacing discards all ${n} trips currently recorded.`,
-    btnCsvReplace: 'Replace all', btnCsvAdd: 'Add to existing',
+    csvReplaceWarn: (n, who) => `Removes the ${n} trip${n === 1 ? '' : 's'} already recorded for ${who}. Everyone else is left alone.`,
+    btnCsvReplace: 'Replace their trips', btnCsvAdd: 'Add to existing',
+    nameJoin: ', ',
     csvDoneAdd: (a, s) => `Added ${a}, skipped ${s} duplicate${s === 1 ? '' : 's'}.`,
-    csvDoneReplace: (n) => `Replaced everything with ${n} trip${n === 1 ? '' : 's'}.`,
+    csvDoneReplace: (a, r, who) => `Replaced ${r} trip${r === 1 ? '' : 's'} with ${a} for ${who}.`,
     csvErrNoRows: 'No trips found in that CSV.',
     csvErrMember: (row, name) => `Row ${row}: no member called "${name}". Add them under Family Members first, or correct the name.`,
     csvErrDate: (row, v) => `Row ${row}: "${v}" is not a YYYY-MM-DD date.`,
@@ -1491,7 +1493,10 @@ function applyCsvImport(text) {
   if (error) { alert(t('alertInvalidFile') + '\n\n' + error); return; }
   pendingCsv = trips;
   const dups = trips.filter(n => data.trips.some(o => sameTrip(n, o))).length;
-  const members = new Set(trips.map(tr => tr.memberId)).size;
+  const ids = new Set(trips.map(tr => tr.memberId));
+  const members = ids.size;
+  const affected = data.trips.filter(tr => ids.has(tr.memberId)).length;
+  const who = csvMemberNames(trips);
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -1501,7 +1506,7 @@ function applyCsvImport(text) {
       <h2>${t('csvTitle')}</h2>
       <p style="font-size:13px;margin-bottom:8px">${esc(t('csvSummary')(trips.length, members))}</p>
       ${dups ? `<p style="font-size:13px;color:var(--text2);margin-bottom:8px">${esc(t('csvDupNote')(dups))}</p>` : ''}
-      ${data.trips.length ? `<div class="warning-box">${esc(t('csvReplaceWarn')(data.trips.length))}</div>` : ''}
+      ${affected ? `<div class="warning-box">${esc(t('csvReplaceWarn')(affected, who))}</div>` : ''}
       <div class="modal-actions">
         <button class="btn" data-act="closeModal" data-arg="csvModal">${t('btnCancel')}</button>
         <button class="btn" data-act="csvAdd">${t('btnCsvAdd')}</button>
@@ -1519,11 +1524,22 @@ function csvAdd() {
   finishCsv(t('csvDoneAdd')(fresh.length, skipped));
 }
 
+// Scoped to the members named in the file. A full wipe is never what someone
+// means when they export one person, edit it and import it back - and the Trips
+// tab may be filtered to that person while they press this, so the table on
+// screen would show one row while three others were destroyed behind it.
 function csvReplace() {
   if (!pendingCsv) return;
-  const n = pendingCsv.length;
-  data.trips = pendingCsv;
-  finishCsv(t('csvDoneReplace')(n));
+  const ids = new Set(pendingCsv.map(tr => tr.memberId));
+  const removed = data.trips.filter(tr => ids.has(tr.memberId)).length;
+  data.trips = data.trips.filter(tr => !ids.has(tr.memberId)).concat(pendingCsv);
+  finishCsv(t('csvDoneReplace')(pendingCsv.length, removed, csvMemberNames(pendingCsv)));
+}
+
+function csvMemberNames(trips) {
+  const seen = [];
+  for (const tr of trips) if (!seen.includes(tr.memberId)) seen.push(tr.memberId);
+  return seen.map(getMemberName).join(t('nameJoin'));
 }
 
 function finishCsv(message) {
