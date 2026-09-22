@@ -137,9 +137,73 @@ jobs:
           path: desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
+  macos:
+    name: macos installer
+    runs-on: macos-latest          # Apple Silicon runner, so this builds aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: 'desktop/src-tauri -> target' }
+
+      - name: Install CLI
+        working-directory: desktop
+        run: npm ci
+
+      # bundle.targets is already app + dmg, and signingIdentity "-" makes Tauri
+      # seal the bundle with an ad-hoc signature rather than leaving only the
+      # linker's, which is what made 0.2.0 read as "damaged".
+      - name: Build
+        working-directory: desktop
+        run: npx tauri build
+
+      # 0.2.0 shipped with Sealed Resources=none and Info.plist unbound. Strict
+      # verification is the check that would have caught it; it fails the build
+      # rather than letting a "damaged" DMG reach a release.
+      - name: Signature must be sealed, not just present
+        run: |
+          APP="desktop/src-tauri/target/release/bundle/macos/BNO Tracker.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dvvv "$APP" 2>&1 | grep -E "Sealed Resources|Info.plist|flags"
+          if codesign -dvvv "$APP" 2>&1 | grep -q "Sealed Resources=none"; then
+            echo "bundle is not sealed - Gatekeeper will call it damaged"; exit 1
+          fi
+          # Informational: runners may have Gatekeeper assessments disabled, so
+          # this is printed rather than enforced. The codesign check above is
+          # the one that distinguishes malformed from merely unsigned.
+          spctl --status || true
+          Q="$RUNNER_TEMP/quarantined.app"
+          ditto "$APP" "$Q"
+          xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" "$Q"
+          spctl --assess --type execute "$Q" 2>&1 || true
+
+      - name: Smoke test — does it launch and reach the disk?
+        run: |
+          BIN="desktop/src-tauri/target/release/bundle/macos/BNO Tracker.app/Contents/MacOS/app"
+          DIR="$HOME/Library/Application Support/uk.bnotracker.app"
+          rm -rf "$DIR"
+          "$BIN" &
+          PID=$!
+          for i in $(seq 30); do [ -d "$DIR" ] && break; sleep 1; done
+          kill "$PID" 2>/dev/null || true
+          [ -d "$DIR" ] || { echo "app launched but never created $DIR - boot() or the fs bridge failed"; exit 1; }
+          echo "boot reached the disk:"; ls -la "$DIR"
+
+      - name: Name the installer after the version
+        id: ver
+        run: echo "version=$(node -p "require('./desktop/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bno-tracker-macos-${{ steps.ver.outputs.version }}
+          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
   release:
-    name: attach installer to the release
-    needs: [checks, windows]
+    name: attach installers to the release
+    needs: [checks, windows, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -150,12 +214,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The installer filename contains a space, so the list has to survive
-          # word splitting - an unquoted $(find) handed gh two broken paths.
-          mapfile -d '' -t FILES < <(find dist -name '*.exe' -print0)
+          # Filenames contain a space, so the list has to survive word splitting.
+          # read -d '' rather than mapfile: works on any bash, so this step can be
+          # tested off the runner.
+          FILES=()
+          while IFS= read -r -d '' f; do FILES+=("$f"); done \
+            < <(find dist \( -name '*.exe' -o -name '*.dmg' \) -print0)
           printf 'attaching: %s\n' "${FILES[@]}"
-          [ ${#FILES[@]} -gt 0 ] || { echo "no installer found"; exit 1; }
+          # A release with one installer looks complete and is not. Require
+          # exactly one per platform, or publish nothing.
+          N_EXE=$(printf '%s\n' "${FILES[@]}" | grep -c '\.exe$' || true)
+          N_DMG=$(printf '%s\n' "${FILES[@]}" | grep -c '\.dmg$' || true)
+          if [ "$N_EXE" -ne 1 ] || [ "$N_DMG" -ne 1 ]; then
+            echo "expected one .exe and one .dmg, found $N_EXE and $N_DMG - not publishing"; exit 1
+          fi
           gh release create "${GITHUB_REF_NAME}" "${FILES[@]}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Windows installer, built on a windows-latest runner. Unsigned, so SmartScreen warns on first run - see docs/INSTALL.md. The macOS build is produced locally and attached by hand." \
+            --notes "Windows x64 and macOS Apple Silicon installers, both built in CI. Neither is code-signed, so SmartScreen and Gatekeeper warn on first run - see docs/INSTALL.md." \
             || gh release upload "${GITHUB_REF_NAME}" "${FILES[@]}" --clobber
+          # Confirm what actually landed rather than trusting the exit code.
+          gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name'
+          N=$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '[.assets[] | select(.name | test("\\.(exe|dmg)$"))] | length')
+          [ "$N" -ge 2 ] || { echo "release has $N installers after upload"; exit 1; }

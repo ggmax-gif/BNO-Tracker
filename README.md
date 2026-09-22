@@ -136,14 +136,19 @@ npm run build      # release .app and .dmg under src-tauri/target/release/bundle
 npm run dev        # dev mode, served from the python server on :8765
 ```
 
-Requires the [Rust toolchain](https://rustup.rs) for the macOS build.
+Local builds need the [Rust toolchain](https://rustup.rs).
 
-**Windows** is built by GitHub Actions on a `windows-latest` runner, because
-Tauri cannot cross-compile it from macOS. Every push runs the engine suite, the
-static guards and a Windows build; a `v*` tag attaches the installer to a
-release. CI also installs the result and checks it launches, but **nobody has
-clicked a button in the Windows build** — treat it as untested in the way that
-matters until someone opens it on a real machine.
+**Releases are built by GitHub Actions**, on a `windows-latest` runner for
+Windows (Tauri cannot cross-compile it from macOS) and a `macos-latest` runner
+for Apple Silicon. Every push runs the engine suite, the static guards and both
+builds. A `v*` tag publishes a release, and refuses to unless it has exactly one
+installer for each platform — a release with one missing looks complete and
+isn't.
+
+CI checks the macOS bundle's signature is sealed, not merely present (0.2.0
+shipped unsealed and read as "damaged"), and launches both builds to confirm
+they boot. But **nobody has clicked a button in the Windows build** — treat it
+as untested in the way that matters until someone opens it on a real machine.
 
 ---
 

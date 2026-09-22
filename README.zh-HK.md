@@ -126,13 +126,17 @@ npm run build      # release .app 同 .dmg 喺 src-tauri/target/release/bundle/
 npm run dev        # 開發模式，用 :8765 個 python server
 ```
 
-macOS 版需要裝 [Rust toolchain](https://rustup.rs)。
+喺自己部機 build 需要裝 [Rust toolchain](https://rustup.rs)。
 
-**Windows 版** 係用 GitHub Actions 喺 `windows-latest` runner 上面 build，
-因為 Tauri 喺 macOS 上面 cross-compile 唔到 Windows。每次 push 都會行計算引擎
-測試、靜態檢查同 Windows build；打 `v*` tag 就會將安裝檔掛上 release。CI 仲會
-真係裝一次同確認開得到，不過 **從來冇人喺 Windows 版度撳過任何一個掣** —
-要等有人喺真機開過，先當佢真係試過。
+**正式版本全部由 GitHub Actions build**：Windows 版喺 `windows-latest` runner
+（Tauri 喺 macOS 上面 cross-compile 唔到 Windows），Apple Silicon 嘅 macOS 版
+喺 `macos-latest` runner。每次 push 都會行計算引擎測試、靜態檢查同兩個平台嘅
+build。打 `v*` tag 就會出 release，但係一定要兩個平台各有一個安裝檔先會出 —
+少咗一個嘅 release 睇落完整，其實唔係。
+
+CI 會檢查 macOS 版個簽名係真係封好咗，唔係淨係有個簽名（0.2.0 就係冇封好，
+所以會話個 app「已損毀」），兩個版本都會真係開一次確認開得到。不過
+**從來冇人喺 Windows 版度撳過任何一個掣** — 要等有人喺真機開過，先當佢真係試過。
 
 ---
 
