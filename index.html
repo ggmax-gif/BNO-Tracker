@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -537,6 +537,7 @@ const WebStore = {
     return raw ? JSON.parse(raw) : getDefaultData();
   },
   async save(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); },
+  async snapshot() {},
   describe() { return 'localStorage'; }
 };
 
@@ -597,6 +598,10 @@ const DesktopStore = {
       await TAURI.fs.remove(await TAURI.path.join(p.backups, n));
     }
   },
+  // Also taken at launch, not only before the first save of the day. A family
+  // that opens the app to check a date and closes it again never saves, so with
+  // save-time backups alone their only copy could go months without a second.
+  async snapshot() { await this._backup(await this._paths()); },
   describe() { return this._dir || 'the application data folder'; }
 };
 
@@ -1626,6 +1631,11 @@ async function boot() {
     return;
   }
   data = loaded;
+  // After a successful parse only, so a corrupt file never takes the day's slot
+  // or pushes a good backup out of the 30. Before storeReady, so no save can
+  // race it. A failure here is not fatal: the first save retries the backup,
+  // and a failure there is reported.
+  try { await Store.snapshot(); } catch (err) { console.warn('launch backup failed', err); }
   storeReady = true;
   // Only now is it safe to let anyone touch the data. Left disabled on a load
   // failure on purpose: if we could not read the file we do not know what is in
