@@ -59,5 +59,65 @@ const cH = calcRollingWindow({id:'k',bnoGrantDate:'2021-01-01'}, [{id:'k',member
 check('200-day trip reads red', cH.status === 'red', `window=${cH.daysAbsentInWindow}`);
 check('history is not rewritten by a plan', cH.isCompliant === true);
 
+console.log('\nI. Citizenship: gov.uk worked example (away 10-25 June 2017)');
+const oracleBC = require('./oracle-bc.cjs');
+const { calcCitizenship, bcTestsOn, buildAbsenceTimeline: bt, yearsBefore, addYears } = E;
+const TS = toDateStr(today);
+{
+  const gI = parseDate('2016-01-01');
+  const tl = bt(gI, [{departureDate:'2017-06-10', returnDate:'2017-06-25'}], parseDate('2023-01-01'), parseDate('2023-01-01'));
+  check('20 June 2022 does not qualify', bcTestsOn(tl, gI, parseDate('2022-06-20')).ok === false);
+  check('23 June 2022 does not qualify', bcTestsOn(tl, gI, parseDate('2022-06-23')).ok === false);
+  check('24 June 2022 qualifies',        bcTestsOn(tl, gI, parseDate('2022-06-24')).ok === true);
+}
+check('29 Feb back 5 years is 28 Feb', toDateStr(yearsBefore('2032-02-29', 5)) === '2027-02-28');
+check('29 Feb back 4 years is 29 Feb', toDateStr(yearsBefore('2032-02-29', 4)) === '2028-02-29');
+
+console.log('\nJ. Citizenship: ILR timing');
+const yrs = n => toDateStr(addDays(today, -Math.round(n * 365.25)));
+const mBC = (o) => ({ id:'c', bnoGrantDate: yrs(8), goal:'bc', ...o });
+const bcEq = (name, m, tr) => { const c = calcCitizenship(m, tr), o = oracleBC(m, tr, TS);
+  check(name + ' matches oracle', (c.earliestStr || null) === o.earliest, `${c.earliestStr} vs ${o.earliest}`); return c; };
+let c;
+c = bcEq('no trips, ILR 2 years ago', mBC({ ilrGrantDate: yrs(2) }), []);
+check('eligible now', c.eligibleNow === true && c.earliestStr === TS);
+c = bcEq('ILR 6 months ago', mBC({ ilrGrantDate: yrs(0.5) }), []);
+check('waits for 12 months of ILR', c.eligibleNow === false && c.earliestStr === toDateStr(addYears(yrs(0.5), 1)));
+c = bcEq('ILR not granted yet', mBC({ bnoGrantDate: yrs(4) }), []);
+check('projection only, never eligible now', c.eligibleNow === false && c.ilrHeld === false && c.earliestStr === toDateStr(addYears(yrs(4), 6)));
+
+console.log('\nK. Citizenship: the 90 and 450 limits are "not more than"');
+const away = (id, from, n) => ({ id, memberId:'c', departureDate: toDateStr(addDays(today, from)), returnDate: toDateStr(addDays(today, from + n)) });
+c = bcEq('90 days in the last 12 months', mBC({ ilrGrantDate: yrs(3) }), [away('a', -200, 90)]);
+check('90 passes', c.eligibleNow === true, `abs12=${c.now.abs12}`);
+c = bcEq('91 days in the last 12 months', mBC({ ilrGrantDate: yrs(3) }), [away('a', -200, 91)]);
+check('91 fails', c.eligibleNow === false && c.now.abs12 === 91);
+const old450 = n => [away('p', -1700, 90), away('q', -1300, 90), away('r', -1000, 90), away('s', -700, 90), away('u', -450, n)];
+c = bcEq('450 days in 5 years', mBC({ ilrGrantDate: yrs(3) }), old450(90));
+check('450 passes', c.eligibleNow === true && c.now.abs5 === 450, `abs5=${c.now.abs5}`);
+c = bcEq('451 days in 5 years', mBC({ ilrGrantDate: yrs(3) }), old450(91));
+check('451 fails', c.eligibleNow === false && c.now.abs5 === 451, `abs5=${c.now.abs5}`);
+
+console.log('\nL. Citizenship: trips still to come, and trips with no return date');
+const base = mBC({ ilrGrantDate: yrs(0.5) });
+const plain = calcCitizenship(base, []);
+c = bcEq('a planned 100-day trip', base, [away('f', 60, 100)]);
+check('pushes the date later', c.earliestStr > plain.earliestStr, `${plain.earliestStr} -> ${c.earliestStr}`);
+c = calcCitizenship(mBC({ ilrGrantDate: yrs(3) }), [{ id:'o', memberId:'c', departureDate: toDateStr(addDays(today,-10)), returnDate:'' }]);
+check('ongoing trip gives no date', c.earliest === null && c.eligibleNow === false);
+check('missing grant date degrades', calcCitizenship({ id:'x' }, []).valid === false);
+
+console.log('\nM. Citizenship planner: earliest date after the trip, not today');
+{
+  const m = mBC({ ilrGrantDate: yrs(3) }), had = [away('h', -150, 75)];   // 75 days used, can apply today
+  const ret = toDateStr(addDays(today, 70)), trip = { id:'n', memberId:'c', departureDate: toDateStr(addDays(today, 30)), returnDate: ret };
+  const wo = calcCitizenship(m, had, ret), wi = calcCitizenship(m, [...had, trip], ret);
+  check('can apply today before planning', calcCitizenship(m, had).eligibleNow === true);
+  check('without the trip: the day you return', wo.earliestStr === ret);
+  check('with it: later, because 75 + 40 > 90', wi.earliestStr > ret, wi.earliestStr);
+  check('matches oracle', wi.earliestStr === oracleBC(m, [...had, trip], TS, ret).earliest);
+  check('notBefore never claims eligible now', wo.eligibleNow === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
