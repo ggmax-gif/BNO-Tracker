@@ -20,7 +20,8 @@ const out = [
   body,
   'module.exports = { parseDate, toDateStr, daysBetween, addDays, addYears,',
   '  tripAbsenceRange, tripAbsenceDays, calcRollingWindow, buildAbsenceTimeline,',
-  '  absentInRange, WINDOW_DAYS, MAX_ABSENCE };',
+  '  absentInRange, WINDOW_DAYS, MAX_ABSENCE,',
+  '  yearsBefore, bcTestsOn, calcCitizenship, BC_YEARS, BC_MAX_5Y, BC_MAX_12M };',
 ].join('\n');
 fs.writeFileSync(path.join(__dirname, '.engine.cjs'), out);
 module.exports = () => require('./.engine.cjs');

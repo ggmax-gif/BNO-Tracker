@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.3.2';
+const APP_VERSION = '0.4.0';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -179,26 +179,50 @@ const BUILD_STAMP = '__BUILD_STAMP__';
 const RULES_CHECKED = '2026-09-03';  // 'YYYY-MM-DD', or '' if never verified
 const RULES_SHELF_LIFE_DAYS = 90;
 
-function rulesStatus() {
-  if (!RULES_CHECKED) return { state: 'unverified', age: null };
-  const age = daysBetween(RULES_CHECKED, todayStr());
+// The same claim for the naturalisation guidance
+// (gov.uk/apply-citizenship-indefinite-leave-to-remain), which RULES_CHECKED
+// does not cover: it was read for the BN(O) visa page only. Same rule applies.
+// Only a person who has read that page on that day may set this.
+const BC_RULES_CHECKED = '';  // 'YYYY-MM-DD', or '' if never verified
+
+function rulesStatus(checked = RULES_CHECKED) {
+  if (!checked) return { state: 'unverified', age: null };
+  const age = daysBetween(checked, todayStr());
   if (!isFinite(age)) return { state: 'unverified', age: null };
   return { state: age >= RULES_SHELF_LIFE_DAYS ? 'stale' : 'fresh', age };
 }
 
+// The citizenship rules only matter to a family that has a member aiming for
+// citizenship, so only they see that warning.
+function anyCitizenshipGoal() { return data.members.some(m => m.goal === 'bc'); }
+
 // Loud only when it should be. Fresh states say their piece quietly in the
 // footer; stale and unverified get a box above the numbers on every tab.
 function rulesBanner() {
+  let out = '';
   const r = rulesStatus();
-  if (r.state === 'fresh') return '';
-  const msg = r.state === 'unverified' ? t('rulesUnverified') : t('rulesStale')(fmt(RULES_CHECKED), r.age);
-  return `<div class="warning-box">${msg}</div>`;
+  if (r.state !== 'fresh') {
+    const msg = r.state === 'unverified' ? t('rulesUnverified') : t('rulesStale')(fmt(RULES_CHECKED), r.age);
+    out += `<div class="warning-box">${msg}</div>`;
+  }
+  const b = rulesStatus(BC_RULES_CHECKED);
+  if (anyCitizenshipGoal() && b.state !== 'fresh') {
+    const msg = b.state === 'unverified' ? t('bcRulesUnverified') : t('bcRulesStale')(fmt(BC_RULES_CHECKED), b.age);
+    out += `<div class="warning-box">${msg}</div>`;
+  }
+  return out;
 }
 
 function rulesFooterLine() {
   const r = rulesStatus();
-  if (r.state === 'unverified') return t('rulesFooterUnverified');
-  return t('rulesFooterChecked')(fmt(RULES_CHECKED)) + (r.state === 'stale' ? ' ' + t('rulesFooterStale') : '');
+  let line = r.state === 'unverified' ? t('rulesFooterUnverified')
+    : t('rulesFooterChecked')(fmt(RULES_CHECKED)) + (r.state === 'stale' ? ' ' + t('rulesFooterStale') : '');
+  if (anyCitizenshipGoal()) {
+    const b = rulesStatus(BC_RULES_CHECKED);
+    line += ' ' + (b.state === 'unverified' ? t('bcRulesFooterUnverified')
+      : t('bcRulesFooterChecked')(fmt(BC_RULES_CHECKED)) + (b.state === 'stale' ? ' ' + t('rulesFooterStale') : ''));
+  }
+  return line;
 }
 
 function buildLabel() {
@@ -229,7 +253,7 @@ const I18N = {
     worstWindowMsg: (n) => `最嚴重嘅 12 個月周期: ${n} 日離港`,
     statFamily: '家庭成員', statWithin: '喺限制以內', statNear: '接近限制', statOver: '超出限制',
     chartTitle: '目前窗口期離港日數 (按成員)',
-    colName: '姓名', colWindowDays: '窗口期日數', colStatus: '狀態', colIlrStatus: 'ILR 狀態', colActions: '操作',
+    colName: '姓名', colWindowDays: '窗口期日數', colStatus: '狀態', colIlrStatus: '目標狀態', colActions: '操作',
     btnEdit: '編輯', btnDelete: '刪除', btnAddMember: '+ 加入成員',
     noMembers: '尚未加入任何家庭成員', granted: '批准日期',
     eligibleBadge: '符合資格',
@@ -250,6 +274,30 @@ const I18N = {
     rulesFooterChecked: (d) => `UKVI 規則最後核對日期：${d}。`,
     rulesFooterStale: '（已超過 90 日，可能過時。）',
     rulesFooterUnverified: 'UKVI 規則未核對過 gov.uk。',
+    bcRulesUnverified: '⚠️ <strong>入籍規則仲未有人核對過。</strong> 450 日、90 日同埋攞咗 ILR 要等夠 12 個月呢幾條，未有人喺 gov.uk 對過。申請入籍之前，請先睇 <a href="https://www.gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility" target="_blank" rel="noopener">官方指引</a>。',
+    bcRulesStale: (d, n) => `⚠️ <strong>入籍規則最後核對日期係 ${d}，已經隔咗 ${n} 日。</strong> 規則有可能改咗。申請之前請先去 <a href="https://www.gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility" target="_blank" rel="noopener">官方指引</a> 核對返。`,
+    bcRulesFooterChecked: (d) => `入籍規則最後核對日期：${d}。`,
+    bcRulesFooterUnverified: '入籍規則未核對過 gov.uk。',
+    goalLabel: '目標', goalIlr: '永久居留 (ILR)', goalBc: '英國公民 (入籍)',
+    goalHint: '入籍只限 18 歲或以上。細路仔係用另一個方法申請。',
+    ilrGrantDateLabel: 'ILR 批出日期 (攞咗先填)',
+    ilrGrantedOn: (d) => `ILR 批出日期: ${d}`,
+    bc12m: '過去 12 個月離港日數 (上限 90)',
+    bc5y: '過去 5 年離港日數 (上限 450)',
+    bcEarliest: '最早可以申請入籍',
+    bcNow: '而家',
+    bcEligible: '可以申請入籍',
+    bcIn: (n) => `入籍喺 ${n} 日後`,
+    bcProjected: (d, ilr) => `預計最早 ${d} 可以申請入籍 (假設 ${ilr} 攞到 ILR)`,
+    bcNeedsReturn: '有個行程未填返港日期，計唔到入籍日期。',
+    bcEnterIlrDate: '攞到 ILR 之後，喺成員資料填返 ILR 批出日期，先計到入籍日期。',
+    bcBlockedByIlr: '要先符合 ILR 嘅 180 日規定，先可以計入籍。',
+    bcNotPresent: (d) => `5 年期第一日 (${d}) 你唔喺英國。入籍要求嗰日人喺英國。`,
+    planBcLine: (without, withTrip) => `返嚟之後最早申請入籍日期: 唔去係 ${without}，去咗係 ${withTrip}。`,
+    planBcNoChange: '呢個行程唔會推遲你最早申請入籍嘅日期。',
+    planBcDelay: (n) => `呢個行程會將你最早申請入籍嘅日期推遲 ${n} 日。`,
+    vMemberGoal: (n) => `成員「${n}」嘅目標唔係 ilr 或者 bc。`,
+    vMemberIlrDate: (n) => `成員「${n}」嘅 ILR 批出日期唔係有效日期。`,
     calcNoticeBody: '<strong>你嘅數字可能同之前唔同咗。</strong> 離港日數嘅計法喺 2026 年 9 月 3 日改正咗：而家係計 <strong>任何 12 個月內</strong> 嘅 180 日，即係 UKVI 真正要求嗰個。舊版本淨係睇 180 日窗口，計少咗 — 有啲人根本未夠資格，都顯示咗「符合 ILR 資格」。<strong>你嘅出行記錄一個字都冇改過</strong>，變嘅淨係計法。',
     calcNoticeAck: '知道喇',
     colMember: '成員', colDeparture: '離港日期', colReturn: '返港日期', colDuration: '持續時間', colPurpose: '目的',
@@ -344,7 +392,7 @@ const I18N = {
     worstWindowMsg: (n) => `Worst 12-month window: ${n} days absent`,
     statFamily: 'Family Members', statWithin: 'Within Limit', statNear: 'Approaching Limit', statOver: 'Exceeded Limit',
     chartTitle: 'Current Window Days (by Member)',
-    colName: 'Name', colWindowDays: 'Window Days', colStatus: 'Status', colIlrStatus: 'ILR Status', colActions: 'Actions',
+    colName: 'Name', colWindowDays: 'Window Days', colStatus: 'Status', colIlrStatus: 'Goal Status', colActions: 'Actions',
     btnEdit: 'Edit', btnDelete: 'Delete', btnAddMember: '+ Add Member',
     noMembers: 'No family members added yet', granted: 'Granted',
     eligibleBadge: 'Eligible',
@@ -365,6 +413,30 @@ const I18N = {
     rulesFooterChecked: (d) => `UKVI rules last checked ${d}.`,
     rulesFooterStale: '(Over 90 days ago — may be out of date.)',
     rulesFooterUnverified: 'UKVI rules not verified against gov.uk.',
+    bcRulesUnverified: '⚠️ <strong>The citizenship rules have not been verified.</strong> Nobody has yet checked the 450-day and 90-day limits, or the 12 months of ILR, against gov.uk. Read the <a href="https://www.gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility" target="_blank" rel="noopener">official guidance</a> before you apply.',
+    bcRulesStale: (d, n) => `⚠️ <strong>Citizenship rules last checked ${d}, ${n} days ago.</strong> They may have changed since. Check the <a href="https://www.gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility" target="_blank" rel="noopener">official guidance</a> before you apply.`,
+    bcRulesFooterChecked: (d) => `Citizenship rules last checked ${d}.`,
+    bcRulesFooterUnverified: 'Citizenship rules not verified against gov.uk.',
+    goalLabel: 'Goal', goalIlr: 'Settlement (ILR)', goalBc: 'British citizenship',
+    goalHint: 'Naturalisation is for adults. Children under 18 apply a different way.',
+    ilrGrantDateLabel: 'ILR granted on (once you have it)',
+    ilrGrantedOn: (d) => `ILR granted: ${d}`,
+    bc12m: 'Days absent, last 12 months (limit 90)',
+    bc5y: 'Days absent, last 5 years (limit 450)',
+    bcEarliest: 'Earliest citizenship application',
+    bcNow: 'Now',
+    bcEligible: 'Can apply for citizenship',
+    bcIn: (n) => `Citizenship in ${n} days`,
+    bcProjected: (d, ilr) => `Citizenship from ${d} at the earliest, if ILR is granted on ${ilr}`,
+    bcNeedsReturn: 'A trip has no return date, so the citizenship date cannot be worked out.',
+    bcEnterIlrDate: 'Once you have ILR, add the date it was granted to this member to see the citizenship date.',
+    bcBlockedByIlr: 'The ILR 180-day rule has to be met before citizenship can be worked out.',
+    bcNotPresent: (d) => `You were outside the UK on ${d}, the first day of the 5-year period. You need to have been in the UK that day.`,
+    planBcLine: (without, withTrip) => `Earliest citizenship application after you return: ${without} without this trip, ${withTrip} with it.`,
+    planBcNoChange: 'This trip does not move your earliest citizenship date.',
+    planBcDelay: (n) => `This trip delays your earliest citizenship application by ${n} days.`,
+    vMemberGoal: (n) => `Member "${n}" has a goal that is not ilr or bc.`,
+    vMemberIlrDate: (n) => `Member "${n}" has an ILR grant date that is not a valid date.`,
     calcNoticeBody: '<strong>Your numbers may have changed.</strong> The absence calculation was corrected on 3 September 2026: it now measures 180 days in <strong>any rolling 12 months</strong>, which is what UKVI actually requires. The previous version measured a 180-day window and under-reported — some people were shown as eligible for ILR when they were not. <strong>None of your trip records have been altered</strong>; only the calculation changed.',
     calcNoticeAck: 'Got it',
     colMember: 'Member', colDeparture: 'Departure Date', colReturn: 'Return Date', colDuration: 'Duration', colPurpose: 'Purpose',
@@ -481,7 +553,7 @@ function applyStaticI18n() {
   document.getElementById('appFooter').innerHTML = `
     <div><strong>${t('disclaimerHeading')}.</strong> ${t('disclaimerBody')}</div>
     <div style="margin-top:8px">${t('privacyNote')} · <a href="https://github.com/ggmax-gif/BNO-Tracker" target="_blank" rel="noopener">${t('sourceLink')}</a> · <span class="build-id">${esc(buildLabel())}</span></div>
-    <div style="margin-top:8px">${rulesFooterLine()}</div>
+    <div style="margin-top:8px" id="rulesFooter">${rulesFooterLine()}</div>
   `;
 }
 
@@ -832,6 +904,97 @@ function calcRollingWindow(member, trips, referenceDate) {
   };
 }
 
+// ============ CITIZENSHIP (NATURALISATION) ENGINE ============
+// The second goal a member can pick. Naturalisation after ILR, read from
+// gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility:
+//   - ILR held for 12 months (the spouse-of-a-British-citizen route, which
+//     waives this, is not modelled; its date comes out late, never early)
+//   - no more than 450 days outside the UK in the 5 years before applying
+//   - no more than 90 days outside the UK in the last 12 months
+//   - physically in the UK at the start of the 5-year period
+// These are fixed periods ending on the application date, not a rolling scan,
+// so each test is two O(1) lookups on the same absence timeline ILR uses.
+//
+// The limits are as written ("not more than"), so exactly 450 and exactly 90
+// pass. Days are counted with the ILR midnight rule (departure day counts,
+// return day does not). gov.uk does not say how naturalisation counts days; if
+// it ignores departure days too, this over-counts by one per trip, which only
+// ever makes the date later.
+const BC_YEARS = 5;
+const BC_MAX_5Y = 450;
+const BC_MAX_12M = 90;
+
+// The same calendar date n years earlier. A 29 February with no counterpart
+// becomes 28 February: the earlier start makes the period one day longer,
+// which can only add absences, never hide one.
+function yearsBefore(d, n) {
+  const r = parseDate(d);
+  const back = new Date(r.getFullYear() - n, r.getMonth(), r.getDate());
+  return back.getMonth() === r.getMonth() ? back : new Date(r.getFullYear() - n, r.getMonth() + 1, 0);
+}
+
+// The tests for an application received on `d`. A period "of 5 years ending
+// on d" starts the day after the same date 5 years back. gov.uk's own example
+// fixes this: away 10-25 June 2017, earliest application 24 June 2022, so the
+// start day is 25 June 2017, the day they came home.
+function bcTestsOn(tl, grant, d) {
+  const dIdx = daysBetween(grant, d);
+  const s5 = daysBetween(grant, yearsBefore(d, BC_YEARS)) + 1;
+  const s1 = daysBetween(grant, yearsBefore(d, 1)) + 1;
+  const abs5 = absentInRange(tl, s5, dIdx);
+  const abs12 = absentInRange(tl, s1, dIdx);
+  const presentAtStart = absentInRange(tl, s5, s5) === 0;
+  return { abs5, abs12, presentAtStart, startDate: toDateStr(addDays(grant, s5)),
+           ok: abs5 <= BC_MAX_5Y && abs12 <= BC_MAX_12M && presentAtStart };
+}
+
+// Earliest application date counts every recorded trip, planned ones included.
+// With ILR not yet granted it is a projection from the earliest ILR date. A
+// trip with no return date makes the future unknowable, so no date is given.
+// `notBefore` (optional) starts the search later: the planner asks "the
+// earliest date after I'm back", since "you could apply today" says nothing
+// about what a trip next month costs.
+function calcCitizenship(member, trips, notBefore) {
+  const today = _todayMidnight();
+  const grant = parseDate(member.bnoGrantDate); grant.setHours(0,0,0,0);
+  if (isNaN(grant.getTime())) return { valid: false };
+  const memberTrips = trips.filter(tr => tr.memberId === member.id);
+
+  const ilrHeld = !!member.ilrGrantDate;
+  const ilrBase = ilrHeld ? parseDate(member.ilrGrantDate) : addYears(member.bnoGrantDate, 5);
+  ilrBase.setHours(0,0,0,0);
+  // Not before 5 years on the visa either, so the 5-year tests only ever read
+  // days the tracker has records for.
+  let lower = addYears(ilrBase, 1);
+  const g5 = addYears(member.bnoGrantDate, BC_YEARS);
+  if (g5 > lower) lower = g5;
+  lower.setHours(0,0,0,0);
+
+  const ongoing = memberTrips.some(tr => !tr.returnDate);
+  let lastEnd = today;
+  memberTrips.forEach(tr => { if (tr.returnDate && parseDate(tr.returnDate) > lastEnd) lastEnd = parseDate(tr.returnDate); });
+  let from = lower > today ? lower : today;
+  if (notBefore) { const nb = parseDate(notBefore); nb.setHours(0,0,0,0); if (nb > from) from = nb; }
+  // Five years after the last trip every test passes, so the scan always ends.
+  const horizon = addYears(lastEnd > from ? lastEnd : from, BC_YEARS + 1);
+  const tl = buildAbsenceTimeline(grant, memberTrips, horizon, horizon);
+
+  const now = bcTestsOn(tl, grant, today);
+  let earliest = null;
+  if (!ongoing) {
+    for (let d = new Date(from.getTime()); d <= horizon; d = addDays(d, 1)) {
+      if (bcTestsOn(tl, grant, d).ok) { earliest = d; break; }
+    }
+  }
+  const earliestStr = earliest ? toDateStr(earliest) : '';
+  return {
+    valid: true, ilrHeld, ilrBaseStr: toDateStr(ilrBase), ongoing, now,
+    earliest, earliestStr,
+    eligibleNow: !notBefore && ilrHeld && !ongoing && earliestStr === toDateStr(today),
+    daysToEarliest: earliest ? Math.max(0, daysBetween(todayStr(), earliestStr)) : null,
+  };
+}
+
 // ============ TAB NAVIGATION ============
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
@@ -852,6 +1015,78 @@ function render(tab) {
   // render numbers too, and a staleness warning that only appears on one screen
   // is a warning the user can miss.
   app.innerHTML = calcNotice() + rulesBanner() + body;
+  // Which rules the footer vouches for depends on the members' goals, which
+  // change between renders, not only on language.
+  const rf = document.getElementById('rulesFooter');
+  if (rf) rf.innerHTML = rulesFooterLine();
+}
+
+// What a member's card and table row show depends on their goal. Once ILR has
+// been granted the 180-day window no longer decides anything, so a citizenship
+// goal swaps it for the naturalisation tests. Before that, the ILR rules still
+// apply, and the projected citizenship date is shown alongside them.
+function goalView(m, calc) {
+  if (m.goal !== 'bc') return { showBc: false, bc: null, status: calc.status };
+  const bc = calcCitizenship(m, data.trips);
+  if (!bc.valid || !bc.ilrHeld) return { showBc: false, bc, status: calc.status };
+  const n = bc.now;
+  const status = (n.abs12 > BC_MAX_12M || n.abs5 > BC_MAX_5Y) ? 'red'
+    : (n.abs12 >= 60 || n.abs5 >= 300) ? 'amber' : 'green';
+  return { showBc: true, bc, status };
+}
+
+function bcBadge(bc) {
+  if (bc.eligibleNow) return `<span class="badge badge-green">${t('bcEligible')}</span>`;
+  if (bc.ongoing || !bc.earliest) return `<span class="badge badge-amber">${t('bcNeedsReturn')}</span>`;
+  return `<span class="badge badge-blue">${t('bcIn')(bc.daysToEarliest)}</span>`;
+}
+
+// Shown under the ILR numbers for someone aiming for citizenship who does not
+// have ILR yet. A breach of the ILR rule comes first: no ILR, no citizenship.
+function bcProjectionLine(bc, calc) {
+  if (!bc || !bc.valid) return '';
+  // Past the earliest possible ILR date, the projection assumes a grant that
+  // has either happened (on a later day than assumed) or not: either way the
+  // projected date can only be early. Ask for the real one instead.
+  const msg = !calc.isCompliant ? t('bcBlockedByIlr')
+    : bc.ilrBaseStr <= todayStr() ? t('bcEnterIlrDate')
+    : (bc.ongoing || !bc.earliest) ? t('bcNeedsReturn')
+    : t('bcProjected')(fmt(bc.earliestStr), fmt(bc.ilrBaseStr));
+  return `<div class="info-box" style="margin-top:8px">${msg}</div>`;
+}
+
+function renderBcCard(m, gv) {
+  const { bc } = gv, n = bc.now;
+  const col = v => `var(--${v})`;
+  const c12 = n.abs12 > BC_MAX_12M ? 'red' : n.abs12 >= 60 ? 'amber' : 'green';
+  const c5 = n.abs5 > BC_MAX_5Y ? 'red' : n.abs5 >= 300 ? 'amber' : 'green';
+  const pct = Math.min(100, Math.round((n.abs12 / BC_MAX_12M) * 100));
+  const earliest = bc.eligibleNow ? t('bcNow') : bc.earliest ? fmt(bc.earliestStr) : '–';
+  return `
+        <div style="margin-top:12px">
+          <div class="grid3">
+            <div class="stat">
+              <div class="stat-value" style="color:${col(c12)}">${n.abs12}</div>
+              <div class="stat-label">${t('bc12m')}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="color:${col(c5)}">${n.abs5}</div>
+              <div class="stat-label">${t('bc5y')}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="font-size:18px">${earliest}</div>
+              <div class="stat-label">${t('bcEarliest')}</div>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%;background:${col(c12)}"></div>
+          </div>
+          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">${t('ilrGrantedOn')(fmt(m.ilrGrantDate))}</span>
+            ${bcBadge(bc)}
+          </div>
+          ${!n.presentAtStart && !bc.eligibleNow ? `<div class="warning-box" style="margin-top:8px">${t('bcNotPresent')(fmt(n.startDate))}</div>` : ''}
+        </div>`;
 }
 
 function renderDashboard() {
@@ -860,14 +1095,28 @@ function renderDashboard() {
     return `<div class="empty-state"><h2>${t('welcomeTitle')}</h2><p>${t('welcomeMsg')}</p><button class="btn btn-primary" data-act="showTab" data-arg="members">${t('addFirstMember')}</button></div>`;
   }
 
-  const results = data.members.map(m => ({ member: m, calc: calcRollingWindow(m, data.trips) }));
+  const results = data.members.map(m => {
+    const calc = calcRollingWindow(m, data.trips);
+    return { member: m, calc, gv: goalView(m, calc) };
+  });
 
-  const compliant = results.filter(r => r.calc.status === 'green').length;
-  const warnings = results.filter(r => r.calc.status === 'amber').length;
-  const violations = results.filter(r => r.calc.status === 'red').length;
+  const compliant = results.filter(r => r.gv.status === 'green').length;
+  const warnings = results.filter(r => r.gv.status === 'amber').length;
+  const violations = results.filter(r => r.gv.status === 'red').length;
 
   let memberCards = results.map(r => {
-    const { member: m, calc } = r;
+    const { member: m, calc, gv } = r;
+    if (gv.showBc) {
+      const label = gv.status === 'green' ? t('statusGreen') : gv.status === 'amber' ? t('statusAmber') : t('statusRed');
+      return `
+      <div class="card">
+        <div class="member-header">
+          <h3 style="margin:0">${esc(m.name)}</h3>
+          <span class="badge badge-${gv.status}">${label}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">${t('goalLabel')}: ${t('goalBc')}</div>${renderBcCard(m, gv)}
+      </div>`;
+    }
     const pct = Math.min(100, Math.round((calc.daysAbsentInWindow / 180) * 100));
     const barColor = calc.status === 'green' ? 'var(--green)' : calc.status === 'amber' ? 'var(--amber)' : 'var(--red)';
     const statusLabel = calc.status === 'green' ? t('statusGreen') : calc.status === 'amber' ? t('statusAmber') : t('statusRed');
@@ -915,6 +1164,7 @@ function renderDashboard() {
             ${ilrInfo}
           </div>
           ${calc.worstWindow >= 150 ? `<div class="warning-box" style="margin-top:8px">${t('worstWindowMsg')(calc.worstWindow)}</div>` : ''}
+          ${m.goal === 'bc' ? bcProjectionLine(gv.bc, calc) : ''}
         </div>
       </div>`;
   }).join('');
@@ -949,13 +1199,14 @@ function renderDashboard() {
 function renderMembers() {
   let listHtml = data.members.map(m => {
     const calc = calcRollingWindow(m, data.trips);
-    const statusBadge = calc.status === 'green' ? t('statusNormal') : calc.status === 'amber' ? t('statusWarning') : t('statusOver');
+    const gv = goalView(m, calc);
+    const statusBadge = gv.status === 'green' ? t('statusNormal') : gv.status === 'amber' ? t('statusWarning') : t('statusOver');
     return `
       <tr>
-        <td><strong>${esc(m.name)}</strong><br><span style="font-size:12px;color:var(--text2)">${t('granted')}: ${fmt(m.bnoGrantDate)}</span></td>
-        <td>${calc.daysAbsentInWindow}/180</td>
-        <td><span class="badge badge-${calc.status}">${statusBadge}</span></td>
-        <td>${!calc.isCompliant ? `<span class="badge badge-red">${t('ilrNotEligible')}</span>` : calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
+        <td><strong>${esc(m.name)}</strong><br><span style="font-size:12px;color:var(--text2)">${t('granted')}: ${fmt(m.bnoGrantDate)} · ${t('goalLabel')}: ${m.goal === 'bc' ? t('goalBc') : t('goalIlr')}</span></td>
+        <td>${gv.showBc ? `${gv.bc.now.abs12}/${BC_MAX_12M}` : `${calc.daysAbsentInWindow}/180`}</td>
+        <td><span class="badge badge-${gv.status}">${statusBadge}</span></td>
+        <td>${gv.showBc ? bcBadge(gv.bc) : !calc.isCompliant ? `<span class="badge badge-red">${t('ilrNotEligible')}</span>` : calc.isEligible ? `<span class="badge badge-green">${t('eligibleBadge')}</span>` : calc.isGettingClose ? t('approxDays')(calc.daysToILR) : t('daysShort')(calc.daysToILR)}</td>
         <td>
           <button class="btn btn-sm" data-act="editMember" data-arg="${m.id}">${t('btnEdit')}</button>
           <button class="btn btn-sm btn-danger" data-act="deleteMember" data-arg="${m.id}">${t('btnDelete')}</button>
@@ -1137,6 +1388,20 @@ function showMemberModal(editId) {
       </div>
       <div class="form-row">
         <div class="form-group">
+          <label>${t('goalLabel')}</label>
+          <select id="mGoal">
+            <option value="ilr" ${!member || member.goal !== 'bc' ? 'selected' : ''}>${t('goalIlr')}</option>
+            <option value="bc" ${member && member.goal === 'bc' ? 'selected' : ''}>${t('goalBc')}</option>
+          </select>
+          <span style="font-size:12px;color:var(--text2)">${t('goalHint')}</span>
+        </div>
+        <div class="form-group">
+          <label>${t('ilrGrantDateLabel')}</label>
+          <input type="date" id="mIlrDate" value="${member && member.ilrGrantDate ? member.ilrGrantDate : ''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
           <label>${t('relationship')}</label>
           <select id="mRelationship">
             <option value="">${t('relPick')}</option>
@@ -1216,14 +1481,17 @@ function saveMember(editId) {
   const grantDate = document.getElementById('mGrantDate').value;
   const relationship = document.getElementById('mRelationship').value;
   const notes = document.getElementById('mNotes').value.trim();
+  const goal = document.getElementById('mGoal').value === 'bc' ? 'bc' : 'ilr';
+  const ilrGrantDate = document.getElementById('mIlrDate').value;
 
   if (!name || !grantDate) { alert(t('alertNameDate')); return; }
 
+  const fields = { name, bnoGrantDate: grantDate, relationship, notes, goal, ilrGrantDate };
   if (editId) {
     const idx = data.members.findIndex(m => m.id === editId);
-    if (idx >= 0) data.members[idx] = { ...data.members[idx], name, bnoGrantDate: grantDate, relationship, notes };
+    if (idx >= 0) data.members[idx] = { ...data.members[idx], ...fields };
   } else {
-    data.members.push({ id: genId(), name, bnoGrantDate: grantDate, relationship, notes });
+    data.members.push({ id: genId(), ...fields });
   }
 
   persist();
@@ -1291,6 +1559,27 @@ function calcPlanner() {
       </div>
     </div>`;
 
+  // For a citizenship goal the question is how far the trip moves the earliest
+  // application date. With ILR already granted that is the only question, so
+  // it replaces the 180-day result rather than sitting under it.
+  if (member.goal === 'bc') {
+    const before = calcCitizenship(member, data.trips, returnDate);
+    const after = calcCitizenship(member, proposedTrips, returnDate);
+    if (before.valid && after.valid) {
+      let box;
+      if (!before.ilrHeld && before.ilrBaseStr <= todayStr()) {
+        box = `<div class="warning-box">${t('bcEnterIlrDate')}</div>`;
+      } else if (!before.earliest || !after.earliest) {
+        box = `<div class="warning-box">${t('bcNeedsReturn')}</div>`;
+      } else {
+        const delay = daysBetween(before.earliestStr, after.earliestStr);
+        box = `<div class="${delay > 0 ? 'warning-box' : 'info-box'}"><strong>${delay > 0 ? t('planBcDelay')(delay) : t('planBcNoChange')}</strong><br>${t('planBcLine')(fmt(before.earliestStr), fmt(after.earliestStr))}</div>`;
+      }
+      const bcCard = `<div class="card"><h2>${before.ilrHeld ? t('resultFor')(esc(member.name)) : t('bcEarliest')}</h2>${box}</div>`;
+      resultHtml = before.ilrHeld ? bcCard : resultHtml + bcCard;
+    }
+  }
+
   document.getElementById('planResult').innerHTML = resultHtml;
 }
 
@@ -1348,6 +1637,8 @@ function validateImport(o) {
     ids.add(m.id);
     if (typeof m.name !== 'string') return t('vMemberName');
     if (!isDateStr(m.bnoGrantDate)) return t('vMemberDate')(m.name || m.id);
+    if (m.goal !== undefined && m.goal !== 'ilr' && m.goal !== 'bc') return t('vMemberGoal')(m.name || m.id);
+    if (m.ilrGrantDate && !isDateStr(m.ilrGrantDate)) return t('vMemberIlrDate')(m.name || m.id);
   }
   for (const tr of o.trips) {
     if (!tr || typeof tr !== 'object') return t('vTripShape');

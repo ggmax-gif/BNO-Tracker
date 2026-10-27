@@ -24,5 +24,7 @@ check('CSP meta tag present', /http-equiv="Content-Security-Policy"/.test(html))
 // The rules date must be a real date or empty; never a placeholder.
 const rc = (html.match(/const RULES_CHECKED = '([^']*)'/) || [])[1];
 check('RULES_CHECKED is a date or empty', rc === '' || /^\d{4}-\d{2}-\d{2}$/.test(rc), `"${rc}"`);
+const bc = (html.match(/const BC_RULES_CHECKED = '([^']*)'/) || [])[1];
+check('BC_RULES_CHECKED is a date or empty', bc === '' || /^\d{4}-\d{2}-\d{2}$/.test(bc), `"${bc}"`);
 
 process.exit(fail ? 1 : 0);

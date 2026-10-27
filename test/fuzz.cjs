@@ -30,4 +30,28 @@ for (let k = 0; k < N; k++) {
   }
 }
 console.log(`Differential fuzz: ${N-bad}/${N} exact matches on worstWindow, current window and totalAbsent (seed ${process.env.FUZZ_SEED || 20260903})`);
+
+// Citizenship: random families against the brute-force naturalisation oracle.
+const oracleBC = require('./oracle-bc.cjs');
+const { calcCitizenship } = E;
+const NB = Number(process.env.FUZZ_N_BC || 150);
+let badBC = 0;
+for (let k = 0; k < NB; k++) {
+  const off = 1500 + ri(2100);
+  const grant = toDateStr(addDays(today, -off));
+  const m = { id:'m', bnoGrantDate: grant };
+  if (rnd() < 0.6) { const ilr = addDays(grant, 1826 + ri(500)); if (ilr <= today) m.ilrGrantDate = toDateStr(ilr); }
+  const trips = [];
+  for (let j = 0; j < ri(8); j++) {
+    const dep = addDays(grant, ri(off + 400) - 20);   // some before the grant, some still to come
+    trips.push({ id:'b'+j, memberId:'m', departureDate: toDateStr(dep),
+                 returnDate: rnd() < 0.06 ? '' : toDateStr(addDays(dep, ri(160))) });
+  }
+  const c = calcCitizenship(m, trips), o = oracleBC(m, trips, toDateStr(today));
+  const same = (c.earliestStr || null) === o.earliest &&
+    (!o.now || (c.now.abs5 === o.now.abs5 && c.now.abs12 === o.now.abs12 && c.now.presentAtStart === o.now.present));
+  if (!same) { badBC++; if (badBC <= 2) console.log('BC MISMATCH', JSON.stringify({ m, trips, got: { e: c.earliestStr, now: c.now }, want: o })); }
+}
+console.log(`Citizenship fuzz: ${NB-badBC}/${NB} exact matches on earliest date and the 5-year, 12-month and presence tests`);
+bad += badBC;
 process.exit(bad ? 1 : 0);

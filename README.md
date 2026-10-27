@@ -40,6 +40,12 @@ This tracker encodes those rules and shows them in the UI.
   their BNO grant date, and ILR eligibility or a countdown to it.
 - Family Members: add as many BNO holders, partners, children and dependants
   as you need. Each has their own grant date and absence record.
+- Goals: each member aims for either settlement (ILR) or British
+  citizenship. For citizenship, once you enter the date ILR was granted, the
+  card switches to the naturalisation tests: days absent in the last 12
+  months (limit 90), days absent in the last 5 years (limit 450), and the
+  earliest date you can apply. Before ILR it shows a projected date, and the
+  What-If Planner shows how many days a trip would delay it.
 - Trips: log every trip out of the UK. A trip with no return date yet is
   counted up to today.
 - What-If Planner: enter a future departure and return date and see your
@@ -58,6 +64,13 @@ This tracker encodes those rules and shows them in the UI.
 | 5-year ILR qualifying period | `ilrEarliest` calc | `bnoGrantDate + 5 years` |
 | Worst 12-month window since grant | `worstWindow` scan | Checks every rolling window, day by day, because fixed blocks miss a breach that straddles a boundary |
 | Crown Dependencies & Ireland count as absences | UI banner on Trips tab | No special calculation; they are recorded as ordinary trips and the banner is a reminder |
+| Citizenship: ILR held 12 months, at most 450 days absent in the 5 years and 90 in the 12 months before applying, in the UK on the first day of the 5 years | `calcCitizenship()` / `bcTestsOn()` | Fixed periods ending on the application date, not a rolling window |
+
+The citizenship rules come from gov.uk's [eligibility page](https://www.gov.uk/apply-citizenship-indefinite-leave-to-remain/eligibility) and have
+their own "last checked" date, separate from the ILR rules. Nobody has checked
+them yet, so any family with a citizenship goal sees a warning saying so. The
+route for people married to a British citizen, which has no 12-month wait,
+is not modelled; for them the app's date is later than the real one.
 
 ## Tech & design decisions
 

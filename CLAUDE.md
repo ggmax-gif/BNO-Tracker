@@ -36,6 +36,15 @@ The tracker was telling people they were eligible before they were, and an ILR a
 | Worst 12-month window since grant | `worstWindow` scan | Every rolling window, day by day, off a prefix-summed absence timeline. `isCompliant = worstWindow < 180` |
 | ILR qualifying period | `ilrEarliest` | Calendar anniversary — see above |
 | Rules provenance | `RULES_CHECKED` / `rulesStatus()` | 90-day shelf life, then the app says so instead of rendering confident numbers |
+| Citizenship (naturalisation), per-member `goal: 'bc'` | `calcCitizenship()` / `bcTestsOn()` | ILR held 12 months; ≤450 days absent in the 5 years and ≤90 in the 12 months ending on the application date; in the UK on the period's first day, which is the day **after** the same date 5 years back (gov.uk's 10–25 June 2017 → 24 June 2022 example is a regression test). Fixed periods, not a rolling scan. Has its own `BC_RULES_CHECKED`, empty until a human reads the naturalisation page |
+
+## Two goals, two rule sets
+
+A member's `goal` is `'ilr'` (the default, and what every export from before 0.4.0 means by omitting it) or `'bc'`. `ilrGrantDate` is optional and only set once ILR is actually granted. Until it is, a citizenship-goal member still sees the ILR card, because the 180-day rule is what stands between them and citizenship, plus a projected citizenship date that assumes ILR on the earliest possible day. Once it is set, the citizenship tests replace the ILR window entirely.
+
+`RULES_CHECKED` vouches only for the BN(O) visa guidance. **It says nothing about the naturalisation page**, which is why `BC_RULES_CHECKED` exists and why the citizenship banner shows to any family with a `'bc'` member until it is set. The same rule as `RULES_CHECKED` applies: you may not set it.
+
+Not modelled, each of which makes the date **late, never early**: the spouse-of-a-British-citizen route (no 12-month ILR wait, 3-year period), and whether naturalisation ignores departure days (the engine counts them with the ILR midnight rule). Children under 18 register rather than naturalise; the form says so and computes nothing different.
 
 ## The window is 365 days, not 180 — keep it that way
 
