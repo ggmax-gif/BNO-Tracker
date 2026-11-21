@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -294,8 +294,8 @@ const I18N = {
     bcBlockedByIlr: '要先符合 ILR 嘅 180 日規定，先可以計入籍。',
     bcNotPresent: (d) => `5 年期第一日 (${d}) 你唔喺英國。入籍要求嗰日人喺英國。`,
     planBcLine: (without, withTrip) => `返嚟之後最早申請入籍日期: 唔去係 ${without}，去咗係 ${withTrip}。`,
-    planBcNoChange: '呢個行程唔會推遲你最早申請入籍嘅日期。',
-    planBcDelay: (n) => `呢個行程會將你最早申請入籍嘅日期推遲 ${n} 日。`,
+    planBcNoChange: '呢啲行程唔會推遲你最早申請入籍嘅日期。',
+    planBcDelay: (n) => `呢啲行程會將你最早申請入籍嘅日期推遲 ${n} 日。`,
     vMemberGoal: (n) => `成員「${n}」嘅目標唔係 ilr 或者 bc。`,
     vMemberIlrDate: (n) => `成員「${n}」嘅 ILR 批出日期唔係有效日期。`,
     calcNoticeBody: '<strong>你嘅數字可能同之前唔同咗。</strong> 離港日數嘅計法喺 2026 年 9 月 3 日改正咗：而家係計 <strong>任何 12 個月內</strong> 嘅 180 日，即係 UKVI 真正要求嗰個。舊版本淨係睇 180 日窗口，計少咗 — 有啲人根本未夠資格，都顯示咗「符合 ILR 資格」。<strong>你嘅出行記錄一個字都冇改過</strong>，變嘅淨係計法。',
@@ -306,16 +306,24 @@ const I18N = {
     daysSuffix: (n) => `${n} 日`,
     titleTrips: '出行記錄',
     plannerTitle: '假設情況出行規劃器',
-    plannerDesc: '計劃未來出行，睇吓點影響你嘅 12 個月滾動窗口期。',
+    plannerDesc: '計劃一個或者幾個行程。規劃器會由今日開始逐個檢查每一個 12 個月窗口，一路計到最後一個行程返嚟之後一年，已經記錄咗嘅行程（包括未出發嗰啲）都會計埋。',
+    btnAddPlanTrip: '＋ 再加一個行程', btnRemove: '刪除',
+    planTripN: (n) => `行程 ${n}`,
+    alertPlanRowDates: (n) => `行程 ${n}: 請揀齊離港同返港日期。`,
+    alertPlanRowOrder: (n) => `行程 ${n}: 返港日期要喺離港日期當日或者之後。`,
+    planPeakLine: (a, d, b) => `計埋呢啲行程，最緊嘅 12 個月: ${a}/180 日（截至 ${d} 嘅 12 個月）。唔去嘅話最緊係 ${b}/180 日。`,
+    planBreach: (d) => `截至 ${d} 嘅 12 個月就會超出限制。`,
+    planTotalDays: '呢啲行程嘅離港日數',
+    planPeakLabel: '最緊嘅 12 個月 (日)',
+    planRemaining: '最緊嗰 12 個月仲剩幾多日',
+    colPlanDays: '離港日數', colWindowAtReturn: '返嚟嗰日 12 個月總數',
+    planOngoing: '有個已記錄嘅行程未填返港日期，計唔到之後嘅窗口。請先喺出行記錄填返預計返港日期。',
     plannerEmptyTitle: '先加入家庭成員',
     plannerEmptyMsg: '規劃器需要成員資料先可以計算可用日數。',
     lblMember: '家庭成員', lblDeparture: '離港日期', lblReturn: '返港日期',
     btnCalculate: '計算',
     resultFor: (name) => `${name} 嘅結果`,
     canTravel: '可以出行', watchOut: '請留意', cantTravel: '無法出行 - 會超出限制',
-    currentLine: (a, b) => `目前: ${a}/180 日  |  出行後: ${b}/180 日`,
-    tripDurationLabel: '出行持續時間 (日)',
-    daysWindowAfter: '窗口期日數 (出行後)',
     titleMembers: '家庭成員',
     addMemberTitle: '加入家庭成員', editMemberTitle: '編輯成員',
     fullName: '全名', fullNamePlaceholder: '例如: 陳大文',
@@ -432,9 +440,9 @@ const I18N = {
     bcEnterIlrDate: 'Once you have ILR, add the date it was granted to this member to see the citizenship date.',
     bcBlockedByIlr: 'The ILR 180-day rule has to be met before citizenship can be worked out.',
     bcNotPresent: (d) => `You were outside the UK on ${d}, the first day of the 5-year period. You need to have been in the UK that day.`,
-    planBcLine: (without, withTrip) => `Earliest citizenship application after you return: ${without} without this trip, ${withTrip} with it.`,
-    planBcNoChange: 'This trip does not move your earliest citizenship date.',
-    planBcDelay: (n) => `This trip delays your earliest citizenship application by ${n} days.`,
+    planBcLine: (without, withTrip) => `Earliest citizenship application after you return: ${without} without these trips, ${withTrip} with them.`,
+    planBcNoChange: 'These trips do not move your earliest citizenship date.',
+    planBcDelay: (n) => `These trips delay your earliest citizenship application by ${n} days.`,
     vMemberGoal: (n) => `Member "${n}" has a goal that is not ilr or bc.`,
     vMemberIlrDate: (n) => `Member "${n}" has an ILR grant date that is not a valid date.`,
     calcNoticeBody: '<strong>Your numbers may have changed.</strong> The absence calculation was corrected on 3 September 2026: it now measures 180 days in <strong>any rolling 12 months</strong>, which is what UKVI actually requires. The previous version measured a 180-day window and under-reported — some people were shown as eligible for ILR when they were not. <strong>None of your trip records have been altered</strong>; only the calculation changed.',
@@ -445,16 +453,24 @@ const I18N = {
     daysSuffix: (n) => `${n} days`,
     titleTrips: 'Trip Records',
     plannerTitle: 'What-If Trip Planner',
-    plannerDesc: 'Plan a future trip and see how it affects your rolling 12-month window.',
+    plannerDesc: 'Plan one or more trips. The planner checks every 12-month window from today until a year after your last return, counting the trips you have already recorded, including ones not taken yet.',
+    btnAddPlanTrip: '+ Add another trip', btnRemove: 'Remove',
+    planTripN: (n) => `Trip ${n}`,
+    alertPlanRowDates: (n) => `Trip ${n}: pick both a departure and a return date.`,
+    alertPlanRowOrder: (n) => `Trip ${n}: the return date must be on or after the departure date.`,
+    planPeakLine: (a, d, b) => `Busiest 12 months with these trips: ${a}/180 days (the 12 months ending ${d}). Without them, the busiest is ${b}/180.`,
+    planBreach: (d) => `Over the limit in the 12 months ending ${d}.`,
+    planTotalDays: 'Days away on these trips',
+    planPeakLabel: 'Busiest 12 months (days)',
+    planRemaining: 'Days left in the busiest 12 months',
+    colPlanDays: 'Days away', colWindowAtReturn: '12-month total on return',
+    planOngoing: 'A recorded trip has no return date, so future windows cannot be worked out. Add the date you expect to come back on the Trips tab first.',
     plannerEmptyTitle: 'Add a family member first',
     plannerEmptyMsg: 'The planner needs member data before it can calculate available days.',
     lblMember: 'Family Member', lblDeparture: 'Departure Date', lblReturn: 'Return Date',
     btnCalculate: 'Calculate',
     resultFor: (name) => `Result for ${name}`,
     canTravel: 'OK to travel', watchOut: 'Caution', cantTravel: 'Cannot travel — would exceed limit',
-    currentLine: (a, b) => `Current: ${a}/180 days  |  After trip: ${b}/180 days`,
-    tripDurationLabel: 'Trip Duration (days)',
-    daysWindowAfter: 'Window Days (after trip)',
     titleMembers: 'Family Members',
     addMemberTitle: 'Add Family Member', editMemberTitle: 'Edit Member',
     fullName: 'Full Name', fullNamePlaceholder: 'e.g. John Doe',
@@ -995,6 +1011,59 @@ function calcCitizenship(member, trips, notBefore) {
   };
 }
 
+// ============ MULTI-TRIP PLANNER ENGINE ============
+// The window a plan breaks is not always the one ending on a trip's return
+// date. A trip that is fine on the day it ends can breach a window ending
+// months later, once the next trip lands inside the same 12 months. So this
+// scans EVERY 12-month window from today until a year after the last return,
+// once with the planned trips added and once without, on the same prefix-
+// summed timeline the dashboard uses. Trips already recorded, including ones
+// booked for the future, are always counted.
+function calcTripPlan(member, trips, planned) {
+  const today = _todayMidnight();
+  const grant = parseDate(member.bnoGrantDate); grant.setHours(0,0,0,0);
+  if (isNaN(grant.getTime())) return { valid: false };
+  const mine = trips.filter(tr => tr.memberId === member.id);
+  // A recorded trip with no return date has no end, so every future window
+  // depends on a date nobody has given. Refuse rather than guess one.
+  if (mine.some(tr => !tr.returnDate)) return { valid: true, ongoing: true };
+  const plan = planned.map(p => ({ memberId: member.id, departureDate: p.departureDate, returnDate: p.returnDate }));
+
+  let start = today, lastEnd = today;
+  plan.forEach(p => { const d = parseDate(p.departureDate); if (d < start) start = d; });
+  [...mine, ...plan].forEach(tr => { const r = parseDate(tr.returnDate); if (r > lastEnd) lastEnd = r; });
+  // The last absent day is the day before the last return; the last window
+  // that can still hold it ends 364 days later.
+  const horizon = addDays(lastEnd, WINDOW_DAYS - 1);
+  const from = Math.max(0, daysBetween(grant, start)), to = daysBetween(grant, horizon);
+
+  const scan = tl => {
+    let peak = 0, at = -1, breach = -1;
+    for (let i = from; i <= to; i++) {
+      const n = absentInRange(tl, i - (WINDOW_DAYS - 1), i);
+      if (at < 0 || n > peak) { peak = n; at = i; }
+      if (breach < 0 && n >= MAX_ABSENCE) breach = i;   // same strict rule as isCompliant
+    }
+    return { peak, peakEnd: at < 0 ? '' : toDateStr(addDays(grant, at)),
+             firstBreach: breach < 0 ? '' : toDateStr(addDays(grant, breach)) };
+  };
+  const tlPlan = buildAbsenceTimeline(grant, [...mine, ...plan], horizon, horizon);
+  const withPlan = scan(tlPlan);
+  const without = scan(buildAbsenceTimeline(grant, mine, horizon, horizon));
+
+  const todayIdx = daysBetween(grant, today);
+  const perTrip = plan.map(p => {
+    // What the old single-trip planner showed: the 12 months ending on the
+    // return date (or today, for a trip already over).
+    const ri = Math.max(todayIdx, daysBetween(grant, p.returnDate));
+    return { days: tripAbsenceDays(p, today), windowAtReturn: absentInRange(tlPlan, ri - (WINDOW_DAYS - 1), ri) };
+  });
+  const totalDays = perTrip.reduce((a, r) => a + r.days, 0);
+  const status = withPlan.peak >= MAX_ABSENCE ? 'red' : withPlan.peak >= 120 ? 'amber' : 'green';
+  return { valid: true, ongoing: false, withPlan, without, perTrip, totalDays, status,
+           lastReturn: plan.reduce((m, p) => p.returnDate > m ? p.returnDate : m, '') };
+}
+
 // ============ TAB NAVIGATION ============
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
@@ -1292,12 +1361,53 @@ function renderTrips() {
     </div>`;
 }
 
+// The plan being drafted. Deliberately not persisted, like tripFilter: these
+// are trips being considered, not trips taken, and a half-finished plan
+// silently reloaded weeks later would read as data.
+let planMemberId = '';
+let planRows = [{ departureDate: todayStr(), returnDate: '' }];
+
+// Copy what is typed into planRows before anything re-renders the tab, so
+// adding or removing a row never loses dates already entered.
+function readPlanRows() {
+  const sel = document.getElementById('planMember');
+  if (sel) planMemberId = sel.value;
+  document.querySelectorAll('.plan-row').forEach(row => {
+    const i = +row.dataset.idx;
+    if (!planRows[i]) return;
+    planRows[i] = { departureDate: row.querySelector('.plan-dep').value, returnDate: row.querySelector('.plan-ret').value };
+  });
+}
+
+function addPlanRow() { readPlanRows(); planRows.push({ departureDate: '', returnDate: '' }); render('planner'); }
+function removePlanRow(i) {
+  readPlanRows();
+  planRows.splice(+i, 1);
+  if (planRows.length === 0) planRows.push({ departureDate: '', returnDate: '' });
+  render('planner');
+}
+
 function renderPlanner() {
   if (data.members.length === 0) {
     return `<div class="empty-state"><h2>${t('plannerEmptyTitle')}</h2><p>${t('plannerEmptyMsg')}</p></div>`;
   }
-
-  const options = data.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  if (!data.members.some(m => m.id === planMemberId)) planMemberId = data.members[0].id;
+  const options = data.members.map(m => `<option value="${esc(m.id)}" ${m.id === planMemberId ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+  const rows = planRows.map((r, i) => `
+      <div class="form-row plan-row" data-idx="${i}">
+        <div class="form-group" style="flex:0 0 auto;justify-content:flex-end"><strong>${t('planTripN')(i + 1)}</strong></div>
+        <div class="form-group">
+          <label>${t('lblDeparture')}</label>
+          <input type="date" class="plan-dep" value="${esc(r.departureDate)}">
+        </div>
+        <div class="form-group">
+          <label>${t('lblReturn')}</label>
+          <input type="date" class="plan-ret" value="${esc(r.returnDate)}">
+        </div>
+        <div class="form-group" style="justify-content:flex-end">
+          ${planRows.length > 1 ? `<button class="btn btn-sm btn-danger" data-act="removePlanRow" data-arg="${i}">${t('btnRemove')}</button>` : ''}
+        </div>
+      </div>`).join('');
 
   return `
     <div class="card">
@@ -1308,17 +1418,11 @@ function renderPlanner() {
           <label>${t('lblMember')}</label>
           <select id="planMember">${options}</select>
         </div>
-        <div class="form-group">
-          <label>${t('lblDeparture')}</label>
-          <input type="date" id="planDeparture" value="${todayStr()}">
-        </div>
-        <div class="form-group">
-          <label>${t('lblReturn')}</label>
-          <input type="date" id="planReturn">
-        </div>
-        <div class="form-group" style="justify-content:flex-end">
-          <button class="btn btn-primary" data-act="calcPlanner">${t('btnCalculate')}</button>
-        </div>
+      </div>
+      ${rows}
+      <div class="form-row">
+        <div class="form-group" style="flex:0 0 auto"><button class="btn" data-act="addPlanRow">${t('btnAddPlanTrip')}</button></div>
+        <div class="form-group" style="flex:0 0 auto"><button class="btn btn-primary" data-act="calcPlanner">${t('btnCalculate')}</button></div>
       </div>
     </div>
     <div id="planResult"></div>`;
@@ -1511,60 +1615,72 @@ function deleteMember(id) {
 
 // ============ PLANNER LOGIC ============
 function calcPlanner() {
-  const memberId = document.getElementById('planMember').value;
-  const departure = document.getElementById('planDeparture').value;
-  const returnDate = document.getElementById('planReturn').value;
-  if (!departure || !returnDate) { alert(t('alertTwoDates')); return; }
-
-  const member = data.members.find(m => m.id === memberId);
+  readPlanRows();
+  const member = data.members.find(m => m.id === planMemberId);
   if (!member) return;
+  // Blank rows are ignored; a half-filled or reversed row is an error, not a
+  // trip of zero days.
+  const plan = [];
+  for (let i = 0; i < planRows.length; i++) {
+    const r = planRows[i];
+    if (!r.departureDate && !r.returnDate) continue;
+    if (!r.departureDate || !r.returnDate) { alert(t('alertPlanRowDates')(i + 1)); return; }
+    if (r.returnDate < r.departureDate) { alert(t('alertPlanRowOrder')(i + 1)); return; }
+    plan.push(r);
+  }
+  if (plan.length === 0) { alert(t('alertTwoDates')); return; }
 
-  const proposedTrips = [...data.trips, { memberId, departureDate: departure, returnDate }];
-  // Evaluate the rolling 12-month window at the END of the proposed trip — that's
-  // when its absence days are fully inside the window. Without this, a 200-day
-  // future trip would falsely report "OK to travel" because today's window only
-  // overlaps with 1 day of it.
-  const calc = calcRollingWindow(member, proposedTrips, returnDate);
-  const currentCalc = calcRollingWindow(member, data.trips);
-  // Midnight rule: depart day counts, return day doesn't → daysBetween (no +1)
-  const tripDays = daysBetween(departure, returnDate);
+  const out = document.getElementById('planResult');
+  const res = calcTripPlan(member, data.trips, plan);
+  if (!res.valid) return;
+  if (res.ongoing) { out.innerHTML = `<div class="card"><div class="warning-box">${t('planOngoing')}</div></div>`; return; }
 
-  const headline = calc.status === 'green' ? t('canTravel') : calc.status === 'amber' ? t('watchOut') : t('cantTravel');
+  const w = res.withPlan, col = res.status === 'green' ? 'green' : res.status === 'amber' ? 'amber' : 'red';
+  const headline = res.status === 'green' ? t('canTravel') : res.status === 'amber' ? t('watchOut') : t('cantTravel');
+  const tripRows = plan.map((p, i) => `
+        <tr><td>${t('planTripN')(i + 1)}</td><td>${fmt(p.departureDate)}</td><td>${fmt(p.returnDate)}</td>
+          <td>${res.perTrip[i].days}</td><td>${res.perTrip[i].windowAtReturn}/180</td></tr>`).join('');
 
   let resultHtml = `
     <div class="card">
       <h2>${t('resultFor')(esc(member.name))}</h2>
-      <div class="${calc.status === 'green' ? 'info-box' : calc.status === 'amber' ? 'warning-box' : 'danger-box'}">
+      <div class="${res.status === 'green' ? 'info-box' : res.status === 'amber' ? 'warning-box' : 'danger-box'}">
         <strong>${headline}</strong><br>
-        ${t('currentLine')(currentCalc.daysAbsentInWindow, calc.daysAbsentInWindow)}
+        ${t('planPeakLine')(w.peak, fmt(w.peakEnd), res.without.peak)}
+        ${w.firstBreach ? `<br><strong>${t('planBreach')(fmt(w.firstBreach))}</strong>` : ''}
       </div>
       <div class="grid3">
         <div class="stat">
-          <div class="stat-value">${tripDays}</div>
-          <div class="stat-label">${t('tripDurationLabel')}</div>
+          <div class="stat-value">${res.totalDays}</div>
+          <div class="stat-label">${t('planTotalDays')}</div>
         </div>
         <div class="stat">
-          <div class="stat-value" style="color:${calc.daysAbsentInWindow >= 180 ? 'var(--red)' : calc.daysAbsentInWindow >= 120 ? 'var(--amber)' : 'var(--green)'}">${calc.daysAbsentInWindow}</div>
-          <div class="stat-label">${t('daysWindowAfter')}</div>
+          <div class="stat-value" style="color:var(--${col})">${w.peak}</div>
+          <div class="stat-label">${t('planPeakLabel')}</div>
         </div>
         <div class="stat">
-          <div class="stat-value">${calc.remaining}</div>
-          <div class="stat-label">${t('daysRemaining')}</div>
+          <div class="stat-value">${Math.max(0, MAX_ABSENCE - w.peak)}</div>
+          <div class="stat-label">${t('planRemaining')}</div>
         </div>
       </div>
-      <div style="margin-top:12px">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width:${Math.min(100, Math.round((calc.daysAbsentInWindow/180)*100))}%;background:${calc.status === 'green' ? 'var(--green)' : calc.status === 'amber' ? 'var(--amber)' : 'var(--red)'}"></div>
-        </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${Math.min(100, Math.round((w.peak / MAX_ABSENCE) * 100))}%;background:var(--${col})"></div>
+      </div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead><tr><th></th><th>${t('colDeparture')}</th><th>${t('colReturn')}</th><th>${t('colPlanDays')}</th><th>${t('colWindowAtReturn')}</th></tr></thead>
+          <tbody>${tripRows}</tbody>
+        </table>
       </div>
     </div>`;
 
-  // For a citizenship goal the question is how far the trip moves the earliest
-  // application date. With ILR already granted that is the only question, so
-  // it replaces the 180-day result rather than sitting under it.
+  // For a citizenship goal the question is how far the plan moves the earliest
+  // application after the last trip home. With ILR already granted that is the
+  // only question, so it replaces the 180-day result rather than sitting under it.
   if (member.goal === 'bc') {
-    const before = calcCitizenship(member, data.trips, returnDate);
-    const after = calcCitizenship(member, proposedTrips, returnDate);
+    const withTrips = [...data.trips, ...plan.map(p => ({ memberId: member.id, ...p }))];
+    const before = calcCitizenship(member, data.trips, res.lastReturn);
+    const after = calcCitizenship(member, withTrips, res.lastReturn);
     if (before.valid && after.valid) {
       let box;
       if (!before.ilrHeld && before.ilrBaseStr <= todayStr()) {
@@ -1580,7 +1696,7 @@ function calcPlanner() {
     }
   }
 
-  document.getElementById('planResult').innerHTML = resultHtml;
+  out.innerHTML = resultHtml;
 }
 
 // ============ EXPORT/IMPORT ============
@@ -1877,7 +1993,7 @@ function handleCsvImport(event) {
 const ACTIONS = {
   setLang, showTab, showTripModal, showMemberModal, exportData, importData,
   exportCSV, saveTrip, saveMember, editMember, deleteTrip, deleteMember,
-  closeModal, calcPlanner, ackCalcNotice,
+  closeModal, calcPlanner, addPlanRow, removePlanRow, ackCalcNotice,
   setTripFilter, importCSV, csvAdd, csvReplace,
 };
 

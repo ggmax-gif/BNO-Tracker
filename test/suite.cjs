@@ -119,5 +119,37 @@ console.log('\nM. Citizenship planner: earliest date after the trip, not today')
   check('notBefore never claims eligible now', wo.eligibleNow === false);
 }
 
+console.log('\nN. Multi-trip planner: every window, not just the one at each return');
+{
+  const oraclePlan = require('./oracle-plan.cjs');
+  const { calcTripPlan } = E;
+  const D = n => toDateStr(addDays(today, n));
+  const m = { id:'p', bnoGrantDate:'2021-01-01' };
+  const same = (name, trips, plan) => { const c = calcTripPlan(m, trips, plan), o = oraclePlan(m, trips, plan, TS);
+    check(name + ' matches oracle', JSON.stringify([c.withPlan, c.without]) === JSON.stringify([o.withPlan, o.without]),
+      `${c.withPlan.peak}/${c.without.peak}`); return c; };
+  // Each trip alone is green; together they are 190 days inside one year.
+  const A = { departureDate: D(30), returnDate: D(130) }, B = { departureDate: D(220), returnDate: D(310) };
+  let c = same('A alone', [], [A]);   check('A alone is green', c.status === 'green' && c.withPlan.peak === 100);
+  c = same('B alone', [], [B]);       check('B alone is green', c.status === 'green' && c.withPlan.peak === 90);
+  c = same('A and B together', [], [A, B]);
+  check('together they breach', c.status === 'red' && c.withPlan.peak === 190 && c.withPlan.firstBreach !== '');
+  check('first breach is 80 days into B', c.withPlan.firstBreach === D(220 + 79), c.withPlan.firstBreach);
+  // The old planner's blind spot: a trip already booked AFTER the planned one.
+  const booked = [{ id:'k', memberId:'p', departureDate: D(220), returnDate: D(310) }];
+  const old = calcRollingWindow(m, [...booked, { memberId:'p', ...A }], A.returnDate);
+  c = same('planned trip before a booked one', booked, [A]);
+  check('old view at return said 100', old.daysAbsentInWindow === 100);
+  check('the scan finds the breach the old view missed', c.status === 'red' && c.without.peak === 90);
+  // Overlap with a recorded trip counts each day once.
+  c = same('plan overlapping a recorded trip', [{ id:'o', memberId:'p', departureDate: D(30), returnDate: D(80) }], [A]);
+  check('overlap counted once', c.withPlan.peak === 100);
+  check('per-trip days use the midnight rule', c.perTrip[0].days === 100 && c.totalDays === 100);
+  // A recorded trip with no return date: refuse rather than guess.
+  c = calcTripPlan(m, [{ id:'g', memberId:'p', departureDate: D(-10), returnDate:'' }], [A]);
+  check('ongoing recorded trip gives no answer', c.ongoing === true);
+  check('missing grant date degrades', calcTripPlan({ id:'x' }, [], [A]).valid === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

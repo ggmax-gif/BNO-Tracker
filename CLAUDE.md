@@ -31,7 +31,8 @@ The tracker was telling people they were eligible before they were, and an ILR a
 
 | Rule | Function | Note |
 |---|---|---|
-| 180 days in any rolling **12 months** | `calcRollingWindow()` | `WINDOW_DAYS = 365`, `MAX_ABSENCE = 180`. Evaluated at **any** reference date, not just today — that is what makes the What-If Planner meaningful |
+| 180 days in any rolling **12 months** | `calcRollingWindow()` | `WINDOW_DAYS = 365`, `MAX_ABSENCE = 180`. Evaluated at **any** reference date, not just today |
+| Multi-trip plan | `calcTripPlan()` | Scans **every** 12-month window from today (or the earliest planned departure) to a year after the last return, with and without the planned trips, recorded future trips included. Not the window at each return: two trips each fine at their own return can breach a window ending months later (suite case N). Refuses, rather than guesses, when a recorded trip has no return date. Backed by `test/oracle-plan.cjs` |
 | Midnight rule | `tripAbsenceRange()` / `tripAbsenceDays()` | Absence interval is `[departure, return − 1]` for a completed trip, `[departure, today]` for an ongoing one |
 | Worst 12-month window since grant | `worstWindow` scan | Every rolling window, day by day, off a prefix-summed absence timeline. `isCompliant = worstWindow < 180` |
 | ILR qualifying period | `ilrEarliest` | Calendar anniversary — see above |
