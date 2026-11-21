@@ -54,4 +54,31 @@ for (let k = 0; k < NB; k++) {
 }
 console.log(`Citizenship fuzz: ${NB-badBC}/${NB} exact matches on earliest date and the 5-year, 12-month and presence tests`);
 bad += badBC;
+
+// Multi-trip planner: random families and random plans against brute force.
+const oraclePlan = require('./oracle-plan.cjs');
+const { calcTripPlan } = E;
+const NP = Number(process.env.FUZZ_N_PLAN || 120);
+let badP = 0;
+for (let k = 0; k < NP; k++) {
+  const off = 200 + ri(1500);
+  const grant = toDateStr(addDays(today, -off));
+  const trips = [];
+  for (let j = 0; j < ri(6); j++) {
+    const dep = addDays(today, ri(off + 400) - off - 20);        // past, present and booked-ahead trips
+    trips.push({ id:'r'+j, memberId:'m', departureDate: toDateStr(dep), returnDate: toDateStr(addDays(dep, ri(150))) });
+  }
+  const plan = [];
+  for (let j = 0; j < 1 + ri(4); j++) {
+    const dep = addDays(today, ri(500) - 30);                      // some start before today
+    plan.push({ departureDate: toDateStr(dep), returnDate: toDateStr(addDays(dep, ri(160))) });
+  }
+  const m = { id:'m', bnoGrantDate: grant };
+  const c = calcTripPlan(m, trips, plan), o = oraclePlan(m, trips, plan, toDateStr(today));
+  if (JSON.stringify([c.withPlan, c.without]) !== JSON.stringify([o.withPlan, o.without])) {
+    badP++; if (badP <= 2) console.log('PLAN MISMATCH', JSON.stringify({ grant, trips, plan, got: [c.withPlan, c.without], want: [o.withPlan, o.without] }));
+  }
+}
+console.log(`Planner fuzz: ${NP-badP}/${NP} exact matches on peak window, its end date and first breach, with and without the plan`);
+bad += badP;
 process.exit(bad ? 1 : 0);

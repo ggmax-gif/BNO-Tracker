@@ -45,12 +45,16 @@ This tracker encodes those rules and shows them in the UI.
   card switches to the naturalisation tests: days absent in the last 12
   months (limit 90), days absent in the last 5 years (limit 450), and the
   earliest date you can apply. Before ILR it shows a projected date, and the
-  What-If Planner shows how many days a trip would delay it.
+  What-If Planner shows how many days your planned trips would delay it.
 - Trips: log every trip out of the UK. A trip with no return date yet is
   counted up to today.
-- What-If Planner: enter a future departure and return date and see your
-  rolling window as it will stand on the day the trip ends. Most trackers
-  only check today's window, which misses a breach the trip itself causes.
+- What-If Planner: enter one or more future trips and the planner checks
+  every 12-month window from today until a year after the last return,
+  counting the trips you have already recorded. It reports the busiest 12
+  months and the first date the limit would be broken. Checking only the
+  window that ends when a trip ends misses the common case: each trip is fine
+  on its own, but two of them, or one plus a trip already booked, add up to
+  more than 180 days in a window that ends months later.
 - Export and import: JSON for a full backup, CSV for a spreadsheet.
 - Bilingual UI: switch between Traditional Chinese and English, and the app
   remembers your choice.
