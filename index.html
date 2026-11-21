@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -296,6 +296,11 @@ const I18N = {
     planBcLine: (without, withTrip) => `返嚟之後最早申請入籍日期: 唔去係 ${without}，去咗係 ${withTrip}。`,
     planBcNoChange: '呢啲行程唔會推遲你最早申請入籍嘅日期。',
     planBcDelay: (n) => `呢啲行程會將你最早申請入籍嘅日期推遲 ${n} 日。`,
+    planBcTitle: '英國公民 (入籍) — 另一套規則',
+    planBcCounts: (a5, a12) => `嗰日計: 5 年內離港 ${a5}/450 日，最近 12 個月 ${a12}/90 日。`,
+    planBcAllNote: '唔理你揀咗咩目標，每個成員都會計埋呢部分。入籍有自己一套限制: 申請前 5 年離港唔可以多過 450 日，最近 12 個月唔可以多過 90 日。',
+    planBcAssumes: (d) => `日期係假設你 ${d} 攞到 ILR。`,
+    bcRulesShort: '入籍規則仲未喺 gov.uk 核對過。',
     vMemberGoal: (n) => `成員「${n}」嘅目標唔係 ilr 或者 bc。`,
     vMemberIlrDate: (n) => `成員「${n}」嘅 ILR 批出日期唔係有效日期。`,
     calcNoticeBody: '<strong>你嘅數字可能同之前唔同咗。</strong> 離港日數嘅計法喺 2026 年 9 月 3 日改正咗：而家係計 <strong>任何 12 個月內</strong> 嘅 180 日，即係 UKVI 真正要求嗰個。舊版本淨係睇 180 日窗口，計少咗 — 有啲人根本未夠資格，都顯示咗「符合 ILR 資格」。<strong>你嘅出行記錄一個字都冇改過</strong>，變嘅淨係計法。',
@@ -450,6 +455,11 @@ const I18N = {
     planBcLine: (without, withTrip) => `Earliest citizenship application after you return: ${without} without these trips, ${withTrip} with them.`,
     planBcNoChange: 'These trips do not move your earliest citizenship date.',
     planBcDelay: (n) => `These trips delay your earliest citizenship application by ${n} days.`,
+    planBcTitle: 'British citizenship (a separate rule)',
+    planBcCounts: (a5, a12) => `On that date: ${a5}/450 days away in the 5 years, ${a12}/90 in the last 12 months.`,
+    planBcAllNote: 'Shown for every member, whatever their goal. Citizenship has its own limits: no more than 450 days away in the 5 years before you apply, and no more than 90 in the last 12 months.',
+    planBcAssumes: (d) => `The date assumes ILR is granted on ${d}.`,
+    bcRulesShort: 'The citizenship rules have not yet been checked against gov.uk.',
     vMemberGoal: (n) => `Member "${n}" has a goal that is not ilr or bc.`,
     vMemberIlrDate: (n) => `Member "${n}" has an ILR grant date that is not a valid date.`,
     calcNoticeBody: '<strong>Your numbers may have changed.</strong> The absence calculation was corrected on 3 September 2026: it now measures 180 days in <strong>any rolling 12 months</strong>, which is what UKVI actually requires. The previous version measured a 180-day window and under-reported — some people were shown as eligible for ILR when they were not. <strong>None of your trip records have been altered</strong>; only the calculation changed.',
@@ -1021,6 +1031,9 @@ function calcCitizenship(member, trips, notBefore) {
     valid: true, ilrHeld, ilrBaseStr: toDateStr(ilrBase), ongoing, now,
     earliest, earliestStr,
     eligibleNow: !notBefore && ilrHeld && !ongoing && earliestStr === toDateStr(today),
+    // The 5-year and 12-month counts on the earliest date, so the planner can
+    // show how close a plan runs to 450 and 90, not only whether it moves the date.
+    atEarliest: earliest ? bcTestsOn(tl, grant, earliest) : null,
     daysToEarliest: earliest ? Math.max(0, daysBetween(todayStr(), earliestStr)) : null,
   };
 }
@@ -1739,25 +1752,39 @@ function calcPlanner() {
       <p style="font-size:12px;color:var(--text2);margin-top:8px">${t('planLimitNote')}</p>
     </div>`;
 
-  // For a citizenship goal the question is how far the plan moves the earliest
-  // application after the last trip home. With ILR already granted that is the
+  // Citizenship is a separate rule with its own limits (450 days in the 5
+  // years, 90 in the 12 months before applying), and most families on this
+  // route go on to it, so every member gets this check whatever their goal.
+  // The question is how far the plan moves the earliest application after the
+  // last trip home. For a citizenship-goal member who already has ILR it is the
   // only question, so it replaces the 180-day result rather than sitting under it.
-  if (member.goal === 'bc') {
+  {
     const withTrips = [...data.trips, ...plan.map(p => ({ memberId: member.id, ...p }))];
     const before = calcCitizenship(member, data.trips, res.lastReturn);
     const after = calcCitizenship(member, withTrips, res.lastReturn);
     if (before.valid && after.valid) {
+      // No ILR, no citizenship: a plan that breaks the 180-day rule, or a
+      // history that already has, makes any citizenship date meaningless.
+      const ilrBroken = !before.ilrHeld && (res.status === 'red' || !calcRollingWindow(member, data.trips).isCompliant);
       let box;
-      if (!before.ilrHeld && before.ilrBaseStr <= todayStr()) {
+      if (ilrBroken) {
+        box = `<div class="danger-box">${t('bcBlockedByIlr')}</div>`;
+      } else if (!before.ilrHeld && before.ilrBaseStr <= todayStr()) {
         box = `<div class="warning-box">${t('bcEnterIlrDate')}</div>`;
       } else if (!before.earliest || !after.earliest) {
         box = `<div class="warning-box">${t('bcNeedsReturn')}</div>`;
       } else {
         const delay = daysBetween(before.earliestStr, after.earliestStr);
-        box = `<div class="${delay > 0 ? 'warning-box' : 'info-box'}"><strong>${delay > 0 ? t('planBcDelay')(delay) : t('planBcNoChange')}</strong><br>${t('planBcLine')(fmt(before.earliestStr), fmt(after.earliestStr))}</div>`;
+        const a = after.atEarliest;
+        box = `<div class="${delay > 0 ? 'warning-box' : 'info-box'}"><strong>${delay > 0 ? t('planBcDelay')(delay) : t('planBcNoChange')}</strong><br>${t('planBcLine')(fmt(before.earliestStr), fmt(after.earliestStr))}<br>${t('planBcCounts')(a.abs5, a.abs12)}</div>`;
       }
-      const bcCard = `<div class="card"><h2>${before.ilrHeld ? t('resultFor')(esc(member.name)) : t('bcEarliest')}</h2>${box}</div>`;
-      resultHtml = before.ilrHeld ? bcCard : resultHtml + bcCard;
+      // This card carries its own "not verified" line: the page-wide banner only
+      // shows to families with a citizenship-goal member, and this card shows to all.
+      const bcUnverified = rulesStatus(BC_RULES_CHECKED).state !== 'fresh' ? `<div class="warning-box">${t('bcRulesShort')}</div>` : '';
+      const note = t('planBcAllNote') + (before.ilrHeld ? '' : ' ' + t('planBcAssumes')(fmt(before.ilrBaseStr)));
+      const replaces = member.goal === 'bc' && before.ilrHeld;
+      const bcCard = `<div class="card"><h2>${replaces ? t('resultFor')(esc(member.name)) : t('planBcTitle')}</h2>${bcUnverified}${box}<p style="font-size:12px;color:var(--text2);margin-top:8px">${note}</p></div>`;
+      resultHtml = replaces ? bcCard : resultHtml + bcCard;
     }
   }
 

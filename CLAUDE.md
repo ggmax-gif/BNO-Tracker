@@ -44,6 +44,8 @@ The tracker was telling people they were eligible before they were, and an ILR a
 
 A member's `goal` is `'ilr'` (the default, and what every export from before 0.4.0 means by omitting it) or `'bc'`. `ilrGrantDate` is optional and only set once ILR is actually granted. Until it is, a citizenship-goal member still sees the ILR card, because the 180-day rule is what stands between them and citizenship, plus a projected citizenship date that assumes ILR on the earliest possible day. Once it is set, the citizenship tests replace the ILR window entirely.
 
+The What-If Planner runs the citizenship tests for **every** member, whatever their goal, in a separate card (most families on this route go on to citizenship). It shows how far the plan moves the earliest application and the 450/90 counts on that date (`calcCitizenship().atEarliest`), refuses a date when the plan or history breaks the ILR rule, and carries its own "not verified" line because the page-wide citizenship banner only shows to families with a `'bc'` member.
+
 `RULES_CHECKED` vouches only for the BN(O) visa guidance. **It says nothing about the naturalisation page**, which is why `BC_RULES_CHECKED` exists and why the citizenship banner shows to any family with a `'bc'` member until it is set. The same rule as `RULES_CHECKED` applies: you may not set it.
 
 Not modelled, each of which makes the date **late, never early**: the spouse-of-a-British-citizen route (no 12-month ILR wait, 3-year period), and whether naturalisation ignores departure days (the engine counts them with the ILR midnight rule). Children under 18 register rather than naturalise; the form says so and computes nothing different.
