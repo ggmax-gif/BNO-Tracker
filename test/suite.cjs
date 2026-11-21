@@ -175,5 +175,19 @@ console.log('\nO. Planner: does each trip fit in the days left?');
   check('already over without the trip', c.perTrip[0].alreadyOver === true && c.perTrip[0].fits === false);
 }
 
+console.log('\nP. Citizenship counts on the earliest date');
+{
+  const m = mBC({ ilrGrantDate: yrs(3) });
+  const tr = [away('a', -200, 91)];
+  const c = calcCitizenship(m, tr);
+  const g = parseDate(m.bnoGrantDate), end = parseDate(c.earliestStr);
+  const tl = bt(g, tr, addDays(end, 10), addDays(end, 10));
+  const direct = bcTestsOn(tl, g, end);
+  check('atEarliest equals the tests run on that date', JSON.stringify(c.atEarliest) === JSON.stringify(direct));
+  check('and it passes, at most 90 in 12 months', c.atEarliest.ok === true && c.atEarliest.abs12 <= 90, `abs12=${c.atEarliest.abs12}`);
+  check('the day before it fails', bcTestsOn(tl, g, addDays(end, -1)).ok === false);
+  check('no date, no counts', calcCitizenship(m, [{ id:'o', memberId:'c', departureDate: TS, returnDate:'' }]).atEarliest === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

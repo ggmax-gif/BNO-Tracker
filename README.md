@@ -53,7 +53,9 @@ This tracker encodes those rules and shows them in the UI.
   counting the trips you have already recorded. It reports the busiest 12
   months and the first date the limit would be broken, and for each trip
   whether it fits in the days left and the latest date you can come back
-  without going over. Checking only the
+  without going over. It also checks the separate citizenship rule for every
+  member (450 days in 5 years, 90 in the last 12 months) and says how far the
+  plan pushes back your earliest citizenship application. Checking only the
   window that ends when a trip ends misses the common case: each trip is fine
   on its own, but two of them, or one plus a trip already booked, add up to
   more than 180 days in a window that ends months later.
