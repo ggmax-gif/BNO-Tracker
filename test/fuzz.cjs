@@ -75,10 +75,17 @@ for (let k = 0; k < NP; k++) {
   }
   const m = { id:'m', bnoGrantDate: grant };
   const c = calcTripPlan(m, trips, plan), o = oraclePlan(m, trips, plan, toDateStr(today));
-  if (JSON.stringify([c.withPlan, c.without]) !== JSON.stringify([o.withPlan, o.without])) {
+  // Each trip's limit, checked against the oracle at the limit and one day past it.
+  let limitBad = false;
+  if (k < 60) c.perTrip.forEach((r, j) => {
+    const at = len => oraclePlan(m, trips, plan.map((p, i) => i === j ? { ...p, returnDate: toDateStr(addDays(p.departureDate, len)) } : p), toDateStr(today)).withPlan.peak;
+    if (r.alreadyOver) { if (at(0) < 180) limitBad = true; }
+    else if (!(at(r.maxDays) < 180 && at(r.maxDays + 1) >= 180)) limitBad = true;
+  });
+  if (limitBad || JSON.stringify([c.withPlan, c.without]) !== JSON.stringify([o.withPlan, o.without])) {
     badP++; if (badP <= 2) console.log('PLAN MISMATCH', JSON.stringify({ grant, trips, plan, got: [c.withPlan, c.without], want: [o.withPlan, o.without] }));
   }
 }
-console.log(`Planner fuzz: ${NP-badP}/${NP} exact matches on peak window, its end date and first breach, with and without the plan`);
+console.log(`Planner fuzz: ${NP-badP}/${NP} exact matches on peak window, its end date and first breach, with and without the plan; per-trip limits checked at the limit and one day past it for the first 60`);
 bad += badP;
 process.exit(bad ? 1 : 0);

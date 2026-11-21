@@ -151,5 +151,29 @@ console.log('\nN. Multi-trip planner: every window, not just the one at each ret
   check('missing grant date degrades', calcTripPlan({ id:'x' }, [], [A]).valid === false);
 }
 
+console.log('\nO. Planner: does each trip fit in the days left?');
+{
+  const oraclePlan = require('./oracle-plan.cjs');
+  const { calcTripPlan } = E;
+  const D = n => toDateStr(addDays(today, n));
+  const m = { id:'p', bnoGrantDate:'2021-01-01' };
+  const A = { departureDate: D(30), returnDate: D(130) }, B = { departureDate: D(220), returnDate: D(310) };
+  let c = calcTripPlan(m, [], [A]);
+  check('alone: 179 days allowed (180 is a breach)', c.perTrip[0].maxDays === 179 && c.perTrip[0].latestReturn === D(30 + 179));
+  check('alone: 100-day trip fits with 79 to spare', c.perTrip[0].fits && c.perTrip[0].spare === 79);
+  c = calcTripPlan(m, [], [A, B]);
+  check('together: B may last 79 days next to A', c.perTrip[1].maxDays === 79 && c.perTrip[1].over === 11);
+  check('together: A may last 89 days next to B', c.perTrip[0].maxDays === 89 && c.perTrip[0].over === 11);
+  check('together: B latest return is 79 days after it leaves', c.perTrip[1].latestReturn === D(220 + 79));
+  // Cutting B to its latest return really does make the plan fit.
+  const fixed = calcTripPlan(m, [], [A, { ...B, returnDate: c.perTrip[1].latestReturn }]);
+  check('returning on the latest date stays within the limit', fixed.status !== 'red' && fixed.withPlan.peak === 179);
+  const o = oraclePlan(m, [], [A, { ...B, returnDate: D(220 + 80) }], TS);
+  check('one day later breaches (oracle)', o.withPlan.peak === 180);
+  // Recorded trips that already breach: no length of the planned trip fits.
+  c = calcTripPlan(m, [{ id:'x', memberId:'p', departureDate: D(10), returnDate: D(200) }], [{ departureDate: D(300), returnDate: D(301) }]);
+  check('already over without the trip', c.perTrip[0].alreadyOver === true && c.perTrip[0].fits === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -51,7 +51,9 @@ This tracker encodes those rules and shows them in the UI.
 - What-If Planner: enter one or more future trips and the planner checks
   every 12-month window from today until a year after the last return,
   counting the trips you have already recorded. It reports the busiest 12
-  months and the first date the limit would be broken. Checking only the
+  months and the first date the limit would be broken, and for each trip
+  whether it fits in the days left and the latest date you can come back
+  without going over. Checking only the
   window that ends when a trip ends misses the common case: each trip is fine
   on its own, but two of them, or one plus a trip already booked, add up to
   more than 180 days in a window that ends months later.

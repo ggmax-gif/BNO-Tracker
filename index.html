@@ -161,7 +161,7 @@
 // not show. BUILD_STAMP is substituted by that script in the COPY it writes to
 // dist/ - never in this file - which is what lets the desktop build carry a real
 // build time while the web build stays a static file with no build step.
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 const BUILD_STAMP = '__BUILD_STAMP__';
 
 // ============ RULES PROVENANCE ============
@@ -317,6 +317,13 @@ const I18N = {
     planPeakLabel: '最緊嘅 12 個月 (日)',
     planRemaining: '最緊嗰 12 個月仲剩幾多日',
     colPlanDays: '離港日數', colWindowAtReturn: '返嚟嗰日 12 個月總數',
+    colLatestReturn: '最遲幾時返嚟都唔會超', colFits: '夠唔夠日數',
+    planFits: (n) => `夠，仲有 ${n} 日`,
+    planOverBy: (n) => `超出 ${n} 日`,
+    planAlreadyOver: '唔計呢個行程都已經超咗',
+    planOverLine: (n, k, d) => `行程 ${n} 超出 ${k} 日。想唔超，最遲要喺 ${d} 返嚟。`,
+    planAlreadyOverLine: (n) => `行程 ${n}: 唔計呢個行程，其他行程加埋都已經超咗，所以呢個行程點縮短都唔夠。`,
+    planLimitNote: '每個行程嘅「最遲返嚟日期」係假設其他行程照你填嘅日期去。改咗其中一個，其他嘅限期都會跟住變。',
     planOngoing: '有個已記錄嘅行程未填返港日期，計唔到之後嘅窗口。請先喺出行記錄填返預計返港日期。',
     plannerEmptyTitle: '先加入家庭成員',
     plannerEmptyMsg: '規劃器需要成員資料先可以計算可用日數。',
@@ -464,6 +471,13 @@ const I18N = {
     planPeakLabel: 'Busiest 12 months (days)',
     planRemaining: 'Days left in the busiest 12 months',
     colPlanDays: 'Days away', colWindowAtReturn: '12-month total on return',
+    colLatestReturn: 'Latest return within the limit', colFits: 'Fits in the days left?',
+    planFits: (n) => `Fits, ${n} days to spare`,
+    planOverBy: (n) => `${n} days over`,
+    planAlreadyOver: 'Over even without this trip',
+    planOverLine: (n, k, d) => `Trip ${n} is ${k} days over. To stay within the limit, come back by ${d}.`,
+    planAlreadyOverLine: (n) => `Trip ${n}: the other trips already go over the limit, so no length of this trip fits.`,
+    planLimitNote: 'Each trip\u2019s latest return assumes the other trips go ahead as entered. Change one and the others\u2019 limits move too.',
     planOngoing: 'A recorded trip has no return date, so future windows cannot be worked out. Add the date you expect to come back on the Trips tab first.',
     plannerEmptyTitle: 'Add a family member first',
     plannerEmptyMsg: 'The planner needs member data before it can calculate available days.',
@@ -1019,6 +1033,38 @@ function calcCitizenship(member, trips, notBefore) {
 // once with the planned trips added and once without, on the same prefix-
 // summed timeline the dashboard uses. Trips already recorded, including ones
 // booked for the future, are always counted.
+// Busiest 12 months over every window a plan can touch: from today (or the
+// earliest planned departure) to 364 days after the last return.
+function planPeak(grant, mine, plan, today) {
+  let start = today, lastEnd = today;
+  plan.forEach(p => { const d = parseDate(p.departureDate); if (d < start) start = d; });
+  [...mine, ...plan].forEach(tr => { const r = parseDate(tr.returnDate); if (r > lastEnd) lastEnd = r; });
+  const horizon = addDays(lastEnd, WINDOW_DAYS - 1);
+  const tl = buildAbsenceTimeline(grant, [...mine, ...plan], horizon, horizon);
+  let peak = 0;
+  for (let i = Math.max(0, daysBetween(grant, start)), to = daysBetween(grant, horizon); i <= to; i++) {
+    const n = absentInRange(tl, i - (WINDOW_DAYS - 1), i);
+    if (n > peak) peak = n;
+  }
+  return peak;
+}
+
+// How long trip k can last, keeping its departure date and every other trip
+// as entered, before some 12-month window reaches the limit. Lengthening a
+// trip only ever adds absent days, so the busiest window never shrinks and a
+// binary search over the length is exact. Uses the same strict test as
+// isCompliant (a window of 180 is a breach), so the answer is at most 179.
+// A window holds 365 days, so a 365-day trip always breaches: the upper bound.
+function tripLimit(grant, mine, plan, k, today) {
+  const dep = plan[k].departureDate;
+  const ok = len => planPeak(grant, mine,
+    plan.map((p, j) => j === k ? { ...p, returnDate: toDateStr(addDays(dep, len)) } : p), today) < MAX_ABSENCE;
+  if (!ok(0)) return { maxDays: 0, latestReturn: '', alreadyOver: true };
+  let lo = 0, hi = WINDOW_DAYS;          // ok(lo) holds, ok(hi) does not
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ok(mid)) lo = mid; else hi = mid; }
+  return { maxDays: lo, latestReturn: toDateStr(addDays(dep, lo)), alreadyOver: false };
+}
+
 function calcTripPlan(member, trips, planned) {
   const today = _todayMidnight();
   const grant = parseDate(member.bnoGrantDate); grant.setHours(0,0,0,0);
@@ -1052,11 +1098,16 @@ function calcTripPlan(member, trips, planned) {
   const without = scan(buildAbsenceTimeline(grant, mine, horizon, horizon));
 
   const todayIdx = daysBetween(grant, today);
-  const perTrip = plan.map(p => {
+  const perTrip = plan.map((p, k) => {
     // What the old single-trip planner showed: the 12 months ending on the
     // return date (or today, for a trip already over).
     const ri = Math.max(todayIdx, daysBetween(grant, p.returnDate));
-    return { days: tripAbsenceDays(p, today), windowAtReturn: absentInRange(tlPlan, ri - (WINDOW_DAYS - 1), ri) };
+    const days = tripAbsenceDays(p, today);
+    const lim = tripLimit(grant, mine, plan, k, today);
+    return { days, windowAtReturn: absentInRange(tlPlan, ri - (WINDOW_DAYS - 1), ri), ...lim,
+             fits: !lim.alreadyOver && days <= lim.maxDays,
+             spare: lim.alreadyOver ? 0 : lim.maxDays - days,
+             over: lim.alreadyOver ? days : Math.max(0, days - lim.maxDays) };
   });
   const totalDays = perTrip.reduce((a, r) => a + r.days, 0);
   const status = withPlan.peak >= MAX_ABSENCE ? 'red' : withPlan.peak >= 120 ? 'amber' : 'green';
@@ -1637,9 +1688,21 @@ function calcPlanner() {
 
   const w = res.withPlan, col = res.status === 'green' ? 'green' : res.status === 'amber' ? 'amber' : 'red';
   const headline = res.status === 'green' ? t('canTravel') : res.status === 'amber' ? t('watchOut') : t('cantTravel');
-  const tripRows = plan.map((p, i) => `
+  const tripRows = plan.map((p, i) => {
+    const r = res.perTrip[i];
+    const fit = r.alreadyOver ? `<span class="badge badge-red">${t('planAlreadyOver')}</span>`
+      : r.fits ? `<span class="badge badge-green">${t('planFits')(r.spare)}</span>`
+      : `<span class="badge badge-red">${t('planOverBy')(r.over)}</span>`;
+    return `
         <tr><td>${t('planTripN')(i + 1)}</td><td>${fmt(p.departureDate)}</td><td>${fmt(p.returnDate)}</td>
-          <td>${res.perTrip[i].days}</td><td>${res.perTrip[i].windowAtReturn}/180</td></tr>`).join('');
+          <td>${r.days}</td><td>${r.alreadyOver ? '–' : fmt(r.latestReturn)}</td><td>${fit}</td><td>${r.windowAtReturn}/180</td></tr>`;
+  }).join('');
+  // Name the trips that do not fit, with the date that would make them fit.
+  const overLines = plan.map((p, i) => {
+    const r = res.perTrip[i];
+    if (r.alreadyOver) return t('planAlreadyOverLine')(i + 1);
+    return r.fits ? '' : t('planOverLine')(i + 1, r.over, fmt(r.latestReturn));
+  }).filter(Boolean).map(x => `<br>${x}`).join('');
 
   let resultHtml = `
     <div class="card">
@@ -1648,6 +1711,7 @@ function calcPlanner() {
         <strong>${headline}</strong><br>
         ${t('planPeakLine')(w.peak, fmt(w.peakEnd), res.without.peak)}
         ${w.firstBreach ? `<br><strong>${t('planBreach')(fmt(w.firstBreach))}</strong>` : ''}
+        ${overLines}
       </div>
       <div class="grid3">
         <div class="stat">
@@ -1668,10 +1732,11 @@ function calcPlanner() {
       </div>
       <div class="table-wrap" style="margin-top:12px">
         <table>
-          <thead><tr><th></th><th>${t('colDeparture')}</th><th>${t('colReturn')}</th><th>${t('colPlanDays')}</th><th>${t('colWindowAtReturn')}</th></tr></thead>
+          <thead><tr><th></th><th>${t('colDeparture')}</th><th>${t('colReturn')}</th><th>${t('colPlanDays')}</th><th>${t('colLatestReturn')}</th><th>${t('colFits')}</th><th>${t('colWindowAtReturn')}</th></tr></thead>
           <tbody>${tripRows}</tbody>
         </table>
       </div>
+      <p style="font-size:12px;color:var(--text2);margin-top:8px">${t('planLimitNote')}</p>
     </div>`;
 
   // For a citizenship goal the question is how far the plan moves the earliest
